@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sitescope
+      POSTGRES_USER: sitescope
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sitescope -d sitescope"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sitescope:${POSTGRES_PASSWORD}@db:5432/sitescope
+      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
+      SITE_URL: ${SITE_URL:-https://vikramyadav.me}
+      MAX_PAGES: ${MAX_PAGES:-300}
+    ports:
+      - "127.0.0.1:8000:8000"   # only Nginx on the same machine can reach it
+
+volumes:
+  pgdata:
