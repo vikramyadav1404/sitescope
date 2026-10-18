@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Free Screaming Frog alternative</h1>
+  <p class="lead">Screaming Frog SEO Spider is the standard desktop crawler. If you need a quick, free audit without installing anything, SiteScope runs in your browser.</p>
+  {% include "_box.html" %}
+</section>
+<section>
+  <h2>SiteScope vs Screaming Frog (free version)</h2>
+  <table class="t">
+    <thead><tr><th></th><th>SiteScope</th><th>Screaming Frog free</th></tr></thead>
+    <tbody>
+      <tr><td>Install</td><td>None, runs in the browser</td><td>Desktop app</td></tr>
+      <tr><td>Pages per crawl</td><td>Up to {{ max_pages }}</td><td>Up to 500 URLs</td></tr>
+      <tr><td>Issues ranked by priority</td><td>Yes</td><td>No, issues are listed</td></tr>
+      <tr><td>Shareable report link</td><td>Yes</td><td>No</td></tr>
+      <tr><td>Core Web Vitals</td><td>Homepage, via PageSpeed Insights</td><td>Paid licence (API integration)</td></tr>
+      <tr><td>JavaScript rendering</td><td>Raw-HTML checks</td><td>Paid licence</td></tr>
+    </tbody>
+  </table>
+  <p>Screaming Frog is more powerful for large sites and deep custom analysis. SiteScope is built for small startups and student websites that want a clear, ranked to-do list.</p>
+  <h2>The Screaming Frog 500 URL limit</h2>
+  <p>The free Screaming Frog SEO Spider stops after 500 URLs, and resources such as images, CSS and JavaScript files can use up part of that limit. SiteScope skips those files and counts only the pages it crawls.</p>
+  <h2>When to use which</h2>
+  <ul>
+    <li>Use SiteScope for a fast first audit, to share results with a team, or to recheck after fixes.</li>
+    <li>Use Screaming Frog for very large sites, custom extraction and log file analysis.</li>
+  </ul>
+</section>
+{% endblock %}

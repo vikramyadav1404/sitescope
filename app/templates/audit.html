@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Technical SEO audit for your whole site</h1>
+  <p class="lead">One report covers crawlability, on-page tags, internal links, duplicate content and speed. Each issue lists the affected pages and how to fix it.</p>
+  {% include "_box.html" %}
+</section>
+<section>
+  <h2>How the audit works</h2>
+  <ol>
+    <li><strong>Discover.</strong> SiteScope reads robots.txt and your XML sitemap, then starts at the URL you enter.</li>
+    <li><strong>Crawl.</strong> It follows internal links breadth-first, a few requests at a time, with a short delay so your server is not overloaded.</li>
+    <li><strong>Check.</strong> Every HTML page is checked for status codes, titles, meta descriptions, headings, canonical tags, alt text and word count.</li>
+    <li><strong>Analyse.</strong> An internal link graph finds deep and orphan pages. SimHash fingerprints find duplicate and near-duplicate content.</li>
+    <li><strong>Rank.</strong> Issues are sorted by priority, so the problems that hurt the most pages come first.</li>
+  </ol>
+</section>
+<section>
+  <h2>Internal linking tool</h2>
+  <p>The report shows how many internal links the crawler found, the deepest click depth, and the ten pages with the highest internal PageRank. Pages listed in your sitemap that no crawled page links to are flagged as orphans, because search engines find them less easily.</p>
+  <h2>Duplicate content checker</h2>
+  <p>SiteScope builds a 64-bit SimHash of each page's text. Pages whose fingerprints differ by three bits or fewer are reported as duplicates or near-duplicates, together with the page they match.</p>
+  <h2>Check whole website SEO for free</h2>
+  <p>There is no account and no credit card. Run an audit, share the report link with your team, and run it again after you fix the issues to see your health score improve.</p>
+</section>
+{% endblock %}

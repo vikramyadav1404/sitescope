@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>How SEO issues are prioritised</h1>
+  <p class="lead">SiteScope ranks every issue with one formula, so the problems that hurt the most pages come first.</p>
+</section>
+<section>
+  <h2>The formula</h2>
+  <p class="formula">Priority = Severity × % of pages affected</p>
+  <p>Priority runs from 0 to 300. A critical issue on every page scores 300; a notice on 1% of pages scores 1.</p>
+  <h2>Severity levels</h2>
+  <table class="t">
+    <thead><tr><th>Severity</th><th>Level</th><th>Examples</th></tr></thead>
+    <tbody>
+      <tr><td>3</td><td>Critical</td><td>5xx and 4xx errors, noindex on a page</td></tr>
+      <tr><td>2</td><td>Warning</td><td>Missing title or meta description, missing H1, broken internal links, redirect chains, slow responses, orphan pages, duplicate content, poor Core Web Vitals</td></tr>
+      <tr><td>1</td><td>Notice</td><td>Missing alt text, missing canonical, thin content, deep pages, broken external links</td></tr>
+    </tbody>
+  </table>
+  <h2>Health score</h2>
+  <p>The health score starts at 100. Each issue removes a tenth of its priority, capped at 10 points per issue, so one problem cannot hide all the others.</p>
+  <h2>Why not just count issues?</h2>
+  <p>A raw count treats one missing alt tag the same as a site-wide server error. Weighting by severity and reach puts a technical SEO audit in the order a developer should work through it.</p>
+  {% include "_box.html" %}
+</section>
+{% endblock %}

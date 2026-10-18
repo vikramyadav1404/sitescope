@@ -1,0 +1,8 @@
+<form class="box" method="post" action="/start">
+  <label for="url" class="sr">Website URL</label>
+  <input id="url" name="url" type="text" inputmode="url" placeholder="example.com" required autocomplete="url">
+  <input type="hidden" name="back" value="{{ path }}">
+  <button type="submit">{{ button or "Audit my site" }}</button>
+</form>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+<p class="hint">Free. No sign-up. Crawls up to {{ max_pages }} pages per audit.</p>

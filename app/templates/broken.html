@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Free broken link checker</h1>
+  <p class="lead">Find every broken link on your website. SiteScope crawls your pages, tests each internal and external link, and lists the dead ones with the page they are on.</p>
+  {% include "_box.html" with context %}
+</section>
+<section>
+  <h2>What counts as a broken link</h2>
+  <p>A link is broken when the URL returns a 4xx or 5xx status, or when the server cannot be reached at all. SiteScope tests links with a HEAD request and falls back to GET for servers that reject HEAD.</p>
+  <h2>Internal vs external broken links</h2>
+  <ul>
+    <li><strong>Internal broken links</strong> (warning) waste crawl budget and send visitors to error pages on your own site. Fix them first.</li>
+    <li><strong>External broken links</strong> (notice) point to other sites that have moved or closed. Update or remove them.</li>
+  </ul>
+  <h2>How to fix broken links</h2>
+  <ol>
+    <li>Open the audit report and find "Links to a broken internal URL".</li>
+    <li>For each page listed, update the link to the correct URL, or remove it.</li>
+    <li>If a page moved, add a 301 redirect from the old URL to the new one.</li>
+    <li>Run the audit again to confirm the links are fixed.</li>
+  </ol>
+  <h2>Redirect chains</h2>
+  <p>A link that passes through two or more redirects before reaching the final page is slower and can lose ranking signals. SiteScope reports these as redirect chains so you can link straight to the final URL.</p>
+</section>
+{% endblock %}

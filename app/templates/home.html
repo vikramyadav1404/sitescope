@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"SiteScope","url":"{{ canonical }}","applicationCategory":"SEO tool","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"INR"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is SiteScope really free?","acceptedAnswer":{"@type":"Answer","text":"Yes. Audits are free and need no account."}},
+{"@type":"Question","name":"How many pages does it check?","acceptedAnswer":{"@type":"Answer","text":"Each audit crawls up to {{ max_pages }} pages of one website."}},
+{"@type":"Question","name":"Does SiteScope follow robots.txt?","acceptedAnswer":{"@type":"Answer","text":"Yes. Pages blocked by robots.txt are skipped and listed in the report."}}]}
+</script>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Free SEO audit tool for your whole website</h1>
+  <p class="lead">Enter your site. SiteScope crawls every page it can reach, finds technical SEO problems and ranks them, so you know what to fix first.</p>
+  {% include "_box.html" %}
+</section>
+
+<section class="grid">
+  <article><h2>Site-wide, not one page</h2><p>Most free checkers test a single URL. SiteScope follows internal links and your XML sitemap and checks every page it finds.</p></article>
+  <article><h2>Ranked by priority</h2><p>Every issue gets a priority: severity times the share of pages it affects. Critical problems on many pages come first. <a href="/how-issues-are-ranked/">See how ranking works</a>.</p></article>
+  <article><h2>Broken links and duplicates</h2><p>Find <a href="/broken-link-checker/">broken internal and external links</a>, duplicate titles, and near-duplicate pages found with SimHash.</p></article>
+  <article><h2>Internal linking</h2><p>An internal link graph shows click depth, your strongest pages by PageRank, and orphan pages that are in the sitemap but not linked.</p></article>
+  <article><h2>JavaScript SEO</h2><p>SiteScope reads raw HTML, the way most AI crawlers do. <a href="/javascript-seo-checker/">Check whether your content needs JavaScript to show</a>.</p></article>
+  <article><h2>Core Web Vitals</h2><p>LCP, INP and CLS for your homepage from Google PageSpeed Insights. <a href="/core-web-vitals-checker/">What the numbers mean</a>.</p></article>
+</section>
+
+<section>
+  <h2>What SiteScope checks</h2>
+  <ul class="cols">
+    <li>HTTP errors (4xx, 5xx) and redirect chains</li>
+    <li>noindex tags and X-Robots-Tag headers</li>
+    <li>Missing, short, long or duplicate titles</li>
+    <li>Missing or duplicate meta descriptions</li>
+    <li>Missing or multiple H1 headings</li>
+    <li>Missing canonical tags and lang attribute</li>
+    <li>Images without alt text</li>
+    <li>Thin pages under 200 words</li>
+    <li>Slow server responses</li>
+    <li>Pages more than 3 clicks deep</li>
+  </ul>
+</section>
+
+<section class="faq">
+  <h2>Frequently asked questions</h2>
+  <h3>Is SiteScope really free?</h3><p>Yes. Audits are free and need no account.</p>
+  <h3>How many pages does it check?</h3><p>Each audit crawls up to {{ max_pages }} pages of one website.</p>
+  <h3>Does SiteScope follow robots.txt?</h3><p>Yes. Pages blocked by robots.txt are skipped and listed in the report.</p>
+</section>
+{% endblock %}

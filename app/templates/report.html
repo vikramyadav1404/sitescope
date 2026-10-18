@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block head %}{% if row.status in ("queued", "running") %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>SEO audit: {{ row.url }}</h1>
+  {% if row.status in ("queued", "running") %}
+    <p class="lead">Audit {{ row.status }}… This page refreshes every few seconds. Larger sites take a few minutes.</p>
+    <div class="spinner" aria-hidden="true"></div>
+  {% elif row.status == "failed" %}
+    <p class="err">The audit failed: {{ row.error }}</p>
+    <p><a href="/">Try again</a></p>
+  {% endif %}
+</section>
+
+{% if r %}
+<section class="summary">
+  <div class="score {% if r.health_score >= 80 %}good{% elif r.health_score >= 50 %}ok{% else %}bad{% endif %}">
+    <span class="num">{{ r.health_score }}</span><span class="lbl">Health score</span>
+  </div>
+  <div class="stat"><span class="num">{{ r.pages_crawled }}</span><span class="lbl">Pages crawled</span></div>
+  <div class="stat crit"><span class="num">{{ r.counts.Critical }}</span><span class="lbl">Critical</span></div>
+  <div class="stat warn"><span class="num">{{ r.counts.Warning }}</span><span class="lbl">Warnings</span></div>
+  <div class="stat note"><span class="num">{{ r.counts.Notice }}</span><span class="lbl">Notices</span></div>
+</section>
+<p class="meta">Finished {{ r.finished_at[:16]|replace("T", " ") }} UTC · {{ r.sitemap_urls }} URLs in sitemap · {{ r.robots_blocked|length }} blocked by robots.txt</p>
+
+<section>
+  <h2>Issues by priority</h2>
+  {% if not r.issues %}<p>No issues found. Nice work.</p>{% endif %}
+  {% for i in r.issues %}
+  <details class="issue lvl-{{ i.level|lower }}">
+    <summary>
+      <span class="badge">{{ i.level }}</span>
+      <span class="it">{{ i.title }}</span>
+      <span class="pp">{{ i.pages_affected }} page{{ "" if i.pages_affected == 1 else "s" }} · {{ i.pct_pages }}% · priority {{ i.priority }}</span>
+    </summary>
+    <p class="fix"><strong>How to fix:</strong> {{ i.fix }}</p>
+    <ul class="urls">
+      {% for p in i.pages %}<li><a href="{{ p.url }}" rel="nofollow noopener" target="_blank">{{ p.url }}</a>{% if p.detail %} <span class="d">— {{ p.detail }}</span>{% endif %}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+</section>
+
+<section class="two">
+  <div>
+    <h2>Core Web Vitals (homepage)</h2>
+    {% set c = r.core_web_vitals %}
+    {% if c.available %}
+      <table class="t">
+        <tr><th>Source</th><td>{{ c.source }}</td></tr>
+        <tr><th>Performance score</th><td>{{ c.performance_score if c.performance_score is not none else "—" }}</td></tr>
+        <tr><th>LCP</th><td>{{ (c.lcp_ms ~ " ms") if c.lcp_ms is not none else "—" }}</td></tr>
+        <tr><th>INP</th><td>{{ (c.inp_ms ~ " ms") if c.inp_ms is not none else "not enough field data" }}</td></tr>
+        <tr><th>CLS</th><td>{{ c.cls if c.cls is not none else "—" }}</td></tr>
+      </table>
+    {% else %}<p>Not available ({{ c.reason }}).</p>{% endif %}
+  </div>
+  <div>
+    <h2>Internal links</h2>
+    {% set g = r.link_graph %}
+    <p>{{ g.nodes }} pages, {{ g.edges }} internal links, deepest page {{ g.max_depth }} clicks from the start URL, {{ g.orphans|length }} orphan pages.</p>
+    <h3>Top pages by internal PageRank</h3>
+    <ol class="urls">{% for p in g.pagerank_top %}<li>{{ p.url }} <span class="d">({{ p.score }})</span></li>{% endfor %}</ol>
+  </div>
+</section>
+
+<section>
+  <h2>Pages crawled</h2>
+  <div class="scroll">
+  <table class="t small">
+    <thead><tr><th>URL</th><th>Status</th><th>Depth</th><th>Words</th><th>Time</th><th>Title</th></tr></thead>
+    <tbody>
+    {% for p in r.pages %}<tr><td>{{ p.url }}</td><td>{{ p.status or "error" }}</td><td>{{ p.depth }}</td><td>{{ p.words }}</td><td>{{ p.ms }} ms</td><td>{{ p.title }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+<p class="meta"><a href="/api/audits/{{ row.id }}">Download JSON</a> · <a href="/">Run another audit</a></p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Does Google render JavaScript?","acceptedAnswer":{"@type":"Answer","text":"Yes, Googlebot renders pages with a recent Chrome, but rendering can be delayed and fails when scripts error or are blocked."}},
+{"@type":"Question","name":"Do AI crawlers run JavaScript?","acceptedAnswer":{"@type":"Answer","text":"A December 2024 server-log study by Vercel and MERJ found that GPTBot, ClaudeBot and PerplexityBot do not execute JavaScript."}}]}
+</script>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>JavaScript SEO checker</h1>
+  <p class="lead">Can search engines and AI crawlers see your content without running JavaScript? SiteScope reads your pages as raw HTML and shows what is missing.</p>
+  {% include "_box.html" %}
+</section>
+<section>
+  <h2>Why raw HTML matters</h2>
+  <p>Google renders JavaScript, but rendering can be delayed, and it fails when scripts error or are blocked by robots.txt. Many other crawlers do not render at all: a December 2024 server-log study by Vercel and MERJ found that the major AI crawlers, including GPTBot, ClaudeBot and PerplexityBot, do not execute JavaScript.</p>
+  <h2>Common React SEO problems</h2>
+  <ul>
+    <li><strong>Empty shell.</strong> The server sends a page with only a root div; the text appears after JavaScript runs. SiteScope flags pages under 200 words of raw text.</li>
+    <li><strong>Links as click handlers.</strong> Navigation built with onClick instead of &lt;a href&gt; is invisible to crawlers, so deeper pages are never found. Compare the pages crawled with the pages you expect.</li>
+    <li><strong>Titles set in the browser.</strong> Titles and meta descriptions added by scripts are missing from raw HTML. SiteScope reports missing and duplicate tags.</li>
+    <li><strong>Canonical tags added late.</strong> A canonical tag inserted by JavaScript may be ignored.</li>
+  </ul>
+  <h2>Client-side rendering vs server-side rendering for SEO</h2>
+  <p>With server-side rendering or static generation (for example Next.js or Astro), the HTML already contains the content and links, so every crawler can read them. Client-side rendering leaves that work to the crawler. If SiteScope finds very little text or very few pages on a JavaScript site, server-render the key pages first.</p>
+  <h2>How Google renders JavaScript</h2>
+  <p>Googlebot first fetches the HTML, queues the page for rendering, then runs it in an evergreen Chromium and indexes the rendered result. Google's own guide, <a href="https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics">Understand JavaScript SEO Basics</a>, explains the steps.</p>
+</section>
+{% endblock %}

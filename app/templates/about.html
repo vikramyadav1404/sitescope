@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>About SiteScope</h1>
+  <p class="lead">SiteScope is a free technical SEO audit tool for small startups and student websites.</p>
+</section>
+<section>
+  <h2>Why it exists</h2>
+  <p>Paid crawlers are too expensive for many small teams, and most free tools check one page at a time. SiteScope audits a whole site and ranks the issues, so a developer knows what to fix first.</p>
+  <h2>Who built it</h2>
+  <p>SiteScope was built by Vikram Yadav (B.Tech CSE, Bennett University) as the CSET489 mini-project on search engine optimisation.</p>
+  <h2>How it is built</h2>
+  <p>Python and FastAPI with an asynchronous httpx crawler, BeautifulSoup for parsing, NetworkX for the internal link graph, SimHash for duplicate detection, Google PageSpeed Insights for Core Web Vitals and PostgreSQL for stored reports. It runs in Docker behind Nginx and Cloudflare.</p>
+  <h2>The crawler</h2>
+  <p>The SiteScope crawler identifies itself as <code>SiteScopeBot/1.0</code>, follows robots.txt, sends a few requests at a time with a delay between them, and only crawls the site you ask it to audit.</p>
+</section>
+{% endblock %}

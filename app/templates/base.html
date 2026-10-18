@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <meta name="description" content="{{ description }}">
+  <link rel="canonical" href="{{ canonical }}">
+  {% if noindex %}<meta name="robots" content="noindex">{% endif %}
+  <meta property="og:title" content="{{ title }}">
+  <meta property="og:description" content="{{ description }}">
+  <meta property="og:url" content="{{ canonical }}">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">SiteScope</a>
+    <nav>
+      <a href="/audit/">Full audit</a>
+      <a href="/broken-link-checker/">Broken links</a>
+      <a href="/javascript-seo-checker/">JavaScript SEO</a>
+      <a href="/core-web-vitals-checker/">Core Web Vitals</a>
+      <a href="/about/">About</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <p>SiteScope is a free technical SEO audit tool.
+      <a href="/how-issues-are-ranked/">How issues are ranked</a> ·
+      <a href="/screaming-frog-alternative/">Screaming Frog alternative</a> ·
+      <a href="/about/">About</a></p>
+  </footer>
+</body>
+</html>

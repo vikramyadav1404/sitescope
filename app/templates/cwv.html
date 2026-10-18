@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Core Web Vitals checker</h1>
+  <p class="lead">Check your homepage's LCP, INP and CLS. SiteScope uses Google PageSpeed Insights: real Chrome user data (CrUX) when Google has it, lab data from Lighthouse when it does not.</p>
+  {% include "_box.html" %}
+</section>
+<section>
+  <h2>LCP, INP and CLS meaning</h2>
+  <table class="t">
+    <thead><tr><th>Metric</th><th>What it measures</th><th>Good</th><th>Poor</th></tr></thead>
+    <tbody>
+      <tr><td>LCP (Largest Contentful Paint)</td><td>How long the biggest image or text block takes to appear</td><td>2.5 s or less</td><td>over 4 s</td></tr>
+      <tr><td>INP (Interaction to Next Paint)</td><td>How quickly the page responds to clicks, taps and key presses</td><td>200 ms or less</td><td>over 500 ms</td></tr>
+      <tr><td>CLS (Cumulative Layout Shift)</td><td>How much the layout jumps while loading</td><td>0.1 or less</td><td>over 0.25</td></tr>
+    </tbody>
+  </table>
+  <p>Thresholds are from Google's <a href="https://web.dev/articles/vitals">Core Web Vitals</a> guide. SiteScope flags LCP above 2.5 s, INP above 200 ms and CLS above 0.1 as warnings.</p>
+  <h2>How to improve each metric</h2>
+  <ul>
+    <li><strong>LCP:</strong> compress and correctly size the hero image, preload it, and reduce server response time.</li>
+    <li><strong>INP:</strong> split long JavaScript tasks and defer scripts that are not needed for the first interaction.</li>
+    <li><strong>CLS:</strong> set width and height on images and embeds, and reserve space for banners and ads.</li>
+  </ul>
+  <h2>Field data vs lab data</h2>
+  <p>Field data comes from real Chrome users over the last 28 days and is what Google uses. Small or new sites often have no field data, so SiteScope shows Lighthouse lab numbers instead and labels which source it used.</p>
+</section>
+{% endblock %}
