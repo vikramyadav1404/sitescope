@@ -1,0 +1,45 @@
+:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#5f5e58;--line:#e4e1d8;--accent:#1f5f8b;--accent2:#174a6d;--crit:#b3261e;--warn:#9a6700;--note:#4f6b7a;--good:#2e7d32;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecebe6;--muted:#a9a79e;--line:#2c2b28;--accent:#6fb1de;--accent2:#8cc3e8;--crit:#ef6b62;--warn:#e0b04a;--note:#9bb6c4;--good:#7bc47f;--card:#1c1c1a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+.top{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--line)}
+.brand{font-weight:700;font-size:1.2rem;text-decoration:none;color:var(--fg)}
+.top nav{display:flex;flex-wrap:wrap;gap:1rem}.top nav a{text-decoration:none;color:var(--muted)}.top nav a:hover{color:var(--fg)}
+main{max-width:980px;margin:0 auto;padding:0 1rem 3rem}
+section{margin:2.25rem 0}
+.hero{text-align:center;margin-top:3rem}
+h1{font-size:clamp(1.7rem,4vw,2.5rem);line-height:1.2;margin:.2em 0;overflow-wrap:anywhere}
+h2{font-size:1.35rem;margin:1.6em 0 .5em}h3{font-size:1.05rem;margin:1.2em 0 .3em}
+.lead{color:var(--muted);font-size:1.1rem;max-width:680px;margin:.5rem auto 1.5rem}
+.box{display:flex;gap:.5rem;max-width:560px;margin:0 auto}
+.box input{flex:1;min-width:0;padding:.8rem 1rem;font-size:1rem;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
+.box button{padding:.8rem 1.2rem;font-size:1rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer;font-weight:600}
+.box button:hover{background:var(--accent2)}
+.hint{color:var(--muted);font-size:.9rem}.err{color:var(--crit)}
+.sr{position:absolute;left:-9999px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
+.grid article{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.2rem}
+.grid h2{font-size:1.1rem;margin-top:.2em}
+.cols{columns:2 260px}
+.t{border-collapse:collapse;width:100%;background:var(--card)}
+.t th,.t td{border:1px solid var(--line);padding:.5rem .7rem;text-align:left;vertical-align:top}
+.t.small{font-size:.85rem}.scroll{overflow-x:auto}
+.formula{font-size:1.3rem;font-weight:600;text-align:center;padding:1rem;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.summary{display:flex;flex-wrap:wrap;gap:1rem;justify-content:center}
+.summary>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.4rem;min-width:130px;text-align:center}
+.num{display:block;font-size:2rem;font-weight:700}.lbl{color:var(--muted);font-size:.9rem}
+.score.good .num{color:var(--good)}.score.ok .num{color:var(--warn)}.score.bad .num{color:var(--crit)}
+.crit .num{color:var(--crit)}.warn .num{color:var(--warn)}.note .num{color:var(--note)}
+.meta{color:var(--muted);text-align:center;font-size:.9rem}
+.issue{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--note);border-radius:10px;margin:.6rem 0;padding:.6rem .9rem}
+.issue.lvl-critical{border-left-color:var(--crit)}.issue.lvl-warning{border-left-color:var(--warn)}
+.issue summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:.6rem;align-items:baseline}
+.badge{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.lvl-critical .badge{color:var(--crit)}.lvl-warning .badge{color:var(--warn)}.lvl-notice .badge{color:var(--note)}
+.it{font-weight:600}.pp{color:var(--muted);font-size:.9rem;margin-left:auto}
+.urls{font-size:.88rem;word-break:break-all}.d{color:var(--muted)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem}
+.spinner{width:36px;height:36px;margin:1rem auto;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+footer{border-top:1px solid var(--line);padding:1.5rem 1rem;text-align:center;color:var(--muted);font-size:.9rem}
