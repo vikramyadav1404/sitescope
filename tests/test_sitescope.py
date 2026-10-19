@@ -144,6 +144,8 @@ def test_head_requests_and_new_pages():
         assert path in sitemap
     home = tc.get("/").text
     assert "googletagmanager" not in home  # no GA4 tag unless GA4_ID is set
+    assert '<link rel="stylesheet"' not in home and "<style>" in home  # CSS is inlined
+    assert "&#34;" not in home.split("</style>")[0]  # inlined CSS is not HTML-escaped
     assert "google-site-verification" not in home
 
 

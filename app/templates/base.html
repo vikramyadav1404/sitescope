@@ -12,14 +12,21 @@
   <meta property="og:url" content="{{ canonical }}">
   <meta property="og:type" content="website">
   {% if gsc_verification %}<meta name="google-site-verification" content="{{ gsc_verification }}">{% endif %}
-  <link rel="stylesheet" href="/static/style.css">
+  <style>{{ inline_css }}</style>
   {% if ga4_id %}
-  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga4_id }}"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
     gtag('config', '{{ ga4_id }}');
+    // Load the GA4 library after the page has rendered, so it does not compete with
+    // the page's own content on slow mobile connections. Queued events are still sent.
+    window.addEventListener('load', function () {
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://www.googletagmanager.com/gtag/js?id={{ ga4_id }}';
+      document.head.appendChild(s);
+    });
   </script>
   {% endif %}
   {% block head %}{% endblock %}

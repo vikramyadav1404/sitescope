@@ -10,6 +10,7 @@ from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from pydantic import BaseModel
 
 from . import config
@@ -63,6 +64,9 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 templates.env.globals["max_pages"] = config.MAX_PAGES
 templates.env.globals["ga4_id"] = config.GA4_ID
+# The stylesheet is small (~4 KB), so it is inlined in every page instead of being a
+# render-blocking request; this cut mobile LCP in PageSpeed Insights.
+templates.env.globals["inline_css"] = Markup((BASE / "static" / "style.css").read_text())
 templates.env.globals["gsc_verification"] = config.GSC_VERIFICATION
 MAX_RUNNING = 3
 _running = asyncio.Semaphore(MAX_RUNNING)
