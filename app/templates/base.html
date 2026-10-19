@@ -11,7 +11,17 @@
   <meta property="og:description" content="{{ description }}">
   <meta property="og:url" content="{{ canonical }}">
   <meta property="og:type" content="website">
+  {% if gsc_verification %}<meta name="google-site-verification" content="{{ gsc_verification }}">{% endif %}
   <link rel="stylesheet" href="/static/style.css">
+  {% if ga4_id %}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga4_id }}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', '{{ ga4_id }}');
+  </script>
+  {% endif %}
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -32,7 +42,10 @@
     <p>SiteScope is a free technical SEO audit tool.
       <a href="/how-issues-are-ranked/">How issues are ranked</a> ·
       <a href="/screaming-frog-alternative/">Screaming Frog alternative</a> ·
-      <a href="/about/">About</a></p>
+      <a href="/is-my-react-website-seo-friendly/">Is my React site SEO friendly?</a> ·
+      <a href="/free-seo-audit-small-business/">Free SEO audit for small businesses</a> ·
+      <a href="/about/">About</a> ·
+      <a href="/privacy/">Privacy</a></p>
   </footer>
 </body>
 </html>

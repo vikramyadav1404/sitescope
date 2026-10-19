@@ -12,6 +12,8 @@ def _int(name: str, default: int) -> int:
 DATABASE_URL = os.getenv("DATABASE_URL", "")  # empty = in-memory store (dev/tests)
 PAGESPEED_API_KEY = os.getenv("PAGESPEED_API_KEY", "")
 SITE_URL = os.getenv("SITE_URL", "https://vikramyadav.me").rstrip("/")
+GA4_ID = os.getenv("GA4_ID", "").strip()  # e.g. G-XXXXXXXXXX; empty = no analytics tag
+GSC_VERIFICATION = os.getenv("GSC_VERIFICATION", "").strip()  # Search Console HTML-tag token (optional)
 
 MAX_PAGES = _int("MAX_PAGES", 300)          # pages crawled per audit
 MAX_DEPTH = _int("MAX_DEPTH", 6)            # click depth limit

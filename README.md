@@ -32,9 +32,9 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Analysis | NetworkX 3.4 for the link graph, own PageRank, own 64-bit SimHash |
 | Data | PostgreSQL 16 via psycopg 3; in-memory store when `DATABASE_URL` is unset |
 | Deploy | Docker Compose, Nginx reverse proxy, Certbot, Cloudflare DNS, UFW |
-| Tests | pytest, 8 tests against a fake site on `httpx.MockTransport`. No network needed. GitHub Actions on every push |
+| Tests | pytest, 10 tests against a fake site on `httpx.MockTransport`. No network needed. GitHub Actions on every push |
 
-8 SEO landing pages, a report page, a small JSON API, `robots.txt` and `sitemap.xml`. 25 issue types.
+11 public pages (tools, two guides, about and privacy), a report page, a small JSON API, `robots.txt` and `sitemap.xml`. 25 issue types. Optional Google Analytics 4 and Search Console tags, switched on by environment variables.
 
 ## Implemented vs planned
 
@@ -73,7 +73,6 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 
 ## What's still open
 
-- **HEAD requests return 405.** FastAPI routes are GET-only, so uptime monitors and some crawlers that send HEAD get an error on every page. The fix is a small middleware that answers HEAD like GET without a body; it is not deployed yet.
 - **The SSRF guard has a DNS-rebinding gap.** The host is resolved once by the guard and again by httpx when it connects; a hostile DNS server could answer differently the second time. Closing it means pinning the connection to the IP the guard checked.
 - **Core Web Vitals are empty on the live site** until a PageSpeed Insights API key is set.
 - **An audit lost to a restart stays "running" forever.** Background tasks live in the app process; nothing marks orphaned rows as failed on startup.
@@ -84,15 +83,14 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 
 1. **Set the PageSpeed key and mark orphaned audits failed on boot.** Both are small, and both currently make the live report look worse than the code is.
 2. **Pin the resolved IP in the SSRF guard.** The current check is good against typed URLs and redirects, not against a determined attacker with their own DNS.
-3. **Ship the HEAD fix.**
-4. **A PDF export of the report**, since that is what people forward to a client or a manager.
-5. **Saved audits and re-crawls**, so a site can be compared against its own last audit instead of judged once.
+3. **A PDF export of the report**, since that is what people forward to a client or a manager.
+4. **Saved audits and re-crawls**, so a site can be compared against its own last audit instead of judged once.
 
 ## Local setup
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                                  # 8 tests, no network needed
+pytest -q                                  # 10 tests, no network needed
 uvicorn app.main:app --reload              # http://127.0.0.1:8000, in-memory store
 ```
 
@@ -127,6 +125,8 @@ Then point DNS at the VM (DNS only), run `sudo certbot --nginx -d vikramyadav.me
 | `SITE_URL` | `https://vikramyadav.me` | Canonical tags and sitemap |
 | `MAX_PAGES` | `300` | Pages per audit |
 | `CONCURRENCY` / `REQUEST_DELAY_MS` | `5` / `200` | Crawl politeness |
+| `GA4_ID` | empty | Google Analytics 4 measurement ID (`G-…`); empty means no analytics tag |
+| `GSC_VERIFICATION` | empty | Search Console HTML-tag token, only if not verifying by DNS |
 | `RENDER_JS` | off | `1` enables the Playwright diff (needs Playwright + Chromium) |
 
 ## API

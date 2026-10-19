@@ -131,6 +131,35 @@ def test_web_pages_and_api():
     assert tc.get("/api/audits/nope").status_code == 404
 
 
+def test_head_requests_and_new_pages():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    tc = TestClient(app)
+    for path in ("/", "/sitemap.xml", "/health", "/is-my-react-website-seo-friendly/"):
+        res = tc.head(path)
+        assert res.status_code == 200, path
+        assert res.content == b"", path
+    sitemap = tc.get("/sitemap.xml").text
+    for path in ("/is-my-react-website-seo-friendly/", "/free-seo-audit-small-business/", "/privacy/"):
+        assert path in sitemap
+    home = tc.get("/").text
+    assert "googletagmanager" not in home  # no GA4 tag unless GA4_ID is set
+    assert "google-site-verification" not in home
+
+
+def test_analytics_tags_when_configured():
+    from fastapi.testclient import TestClient
+    from app.main import app, templates
+    templates.env.globals.update(ga4_id="G-TEST123", gsc_verification="tok123")
+    try:
+        html = TestClient(app).get("/").text
+        assert "gtag/js?id=G-TEST123" in html
+        assert 'name="google-site-verification" content="tok123"' in html
+        assert "Google Analytics 4" in TestClient(app).get("/privacy/").text
+    finally:
+        templates.env.globals.update(ga4_id="", gsc_verification="")
+
+
 def test_pagerank_matches_networkx_reference():
     import networkx as nx
     from app.linkgraph import pagerank

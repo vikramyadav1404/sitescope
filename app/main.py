@@ -37,10 +37,33 @@ async def lifespan(_app):
     yield
 
 
+class HeadAsGet:
+    """Answer HEAD like GET without a body. FastAPI routes are GET-only, so uptime
+    monitors and crawlers that send HEAD would otherwise get 405 on every page."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] != "HEAD":
+            return await self.app(scope, receive, send)
+
+        async def send_without_body(message):
+            if message["type"] == "http.response.body":
+                message = {"type": "http.response.body", "body": b"",
+                           "more_body": message.get("more_body", False)}
+            await send(message)
+
+        await self.app(dict(scope, method="GET"), receive, send_without_body)
+
+
 app = FastAPI(title="SiteScope", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
+app.add_middleware(HeadAsGet)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 templates.env.globals["max_pages"] = config.MAX_PAGES
+templates.env.globals["ga4_id"] = config.GA4_ID
+templates.env.globals["gsc_verification"] = config.GSC_VERIFICATION
 MAX_RUNNING = 3
 _running = asyncio.Semaphore(MAX_RUNNING)
 
@@ -50,7 +73,7 @@ PAGES = {
           "SiteScope is a free SEO audit tool that crawls your whole website and ranks technical SEO issues by priority. No sign-up needed."),
     "/audit/": ("audit.html", "Technical SEO Audit for Your Whole Site | SiteScope",
                 "Run a free technical SEO audit: broken links, duplicate content, internal linking, titles, meta tags and Core Web Vitals in one report."),
-    "/javascript-seo-checker/": ("javascript.html", "JavaScript SEO Checker: Can Google See Your Page? | SiteScope",
+    "/javascript-seo-checker/": ("javascript.html", "JavaScript SEO Checker: Can Google Read It? | SiteScope",
                                  "Check if your React or JavaScript site hides content and links from search engines and AI crawlers. Free JavaScript SEO checker."),
     "/core-web-vitals-checker/": ("cwv.html", "Core Web Vitals Checker: LCP, INP and CLS | SiteScope",
                                   "Check LCP, INP and CLS for your page with real Chrome user data and lab data, and learn what each Core Web Vital means."),
@@ -60,8 +83,14 @@ PAGES = {
                                 "SiteScope ranks every issue by severity and the share of pages it affects, so you know what to fix first."),
     "/screaming-frog-alternative/": ("frog.html", "Free Screaming Frog Alternative in Your Browser | SiteScope",
                                      "Looking for a free Screaming Frog alternative? Compare SiteScope with the free Screaming Frog SEO Spider, its 500 URL limit and desktop install."),
+    "/is-my-react-website-seo-friendly/": ("guide_react.html", "Is My React Website SEO Friendly? | SiteScope",
+                                           "Check in ten minutes whether Google and AI crawlers can read your React site: raw HTML, titles, links, status codes and the fixes that matter."),
+    "/free-seo-audit-small-business/": ("guide_audit.html", "Free SEO Audit for a Small Business Website | SiteScope",
+                                        "Audit your small business website for SEO for free: indexing, robots.txt, broken links, titles, duplicates, internal links and speed, in order."),
     "/about/": ("about.html", "About SiteScope: Free Technical SEO Audits",
                 "SiteScope is a free technical SEO audit tool built as a student project at Bennett University for small startups and student websites."),
+    "/privacy/": ("privacy.html", "Privacy Policy for the SiteScope SEO Audit Tool",
+                  "What SiteScope stores when you run an audit, which analytics it uses, and how to ask for an audit to be deleted."),
 }
 
 

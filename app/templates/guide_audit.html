@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Free SEO audit for a small business website, step by step","author":{"@type":"Person","name":"Vikram Yadav"},"publisher":{"@type":"Organization","name":"SiteScope","url":"https://vikramyadav.me/"},"datePublished":"2026-10-19","dateModified":"2026-10-19","mainEntityOfPage":"{{ canonical }}"}
+</script>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Free SEO audit for a small business website</h1>
+  <p class="lead">You do not need a paid tool to find what is holding your site back. Work through these steps in order, because each one depends on the one before: a page Google cannot find will not rank, however good its title is.</p>
+</section>
+<section>
+  <h2>Before you start</h2>
+  <p>Set up Google Search Console for your domain. It is free, and it is the only place that shows which of your pages Google has indexed and which searches already bring people to your site. Verifying the domain with a DNS record covers every version of the site (http and https, www and non-www) in one property.</p>
+
+  <h2>The audit, step by step</h2>
+  <h3>1. Check what Google has indexed</h3>
+  <p>In Search Console, open Indexing, then Pages. It lists your indexed pages and, for the rest, the reason they were left out: blocked by robots.txt, marked noindex, redirected, not found, or "Crawled – currently not indexed". If an important page is missing, find out why before you work on anything else. A <code>site:yourdomain.com</code> search on Google gives a rough picture too, but the number it shows is only an estimate.</p>
+
+  <h3>2. Read your robots.txt and sitemap</h3>
+  <p>Open <code>yoursite.com/robots.txt</code> and check that no Disallow line blocks pages you want found. Then open your XML sitemap. It should list only pages that load normally and are meant to be indexed. Submit it in Search Console under Indexing, then Sitemaps.</p>
+
+  <h3>3. Crawl the whole site</h3>
+  <p>Most free checkers test a single URL, but small sites usually break in places nobody visits: an old service page, a link in the footer, a blog post from three years ago. A full crawl finds missing pages, server errors, redirect chains and broken links to other sites across every page. <a href="/audit/">SiteScope's full audit</a> does this for up to {{ max_pages }} pages.</p>
+
+  <h3>4. Check titles, descriptions and headings</h3>
+  <p>Each page needs its own title of roughly 30 to 60 characters that says what the page is about, a meta description that makes someone want to click, and one H1 heading. Duplicate titles are common on sites built from a template, such as every service page being called "Services | Company Name".</p>
+
+  <h3>5. Find duplicate and thin pages</h3>
+  <p>Near-identical pages, such as one page per city with only the city name changed, compete with each other, and often none of them ranks. Merge them, make each one genuinely different, or point them at one main version with a canonical tag. Pages with very little text are worth expanding or removing.</p>
+
+  <h3>6. Look at your internal links</h3>
+  <p>A page that no other page links to (an orphan page) is hard for Google to find and gets little weight. Link to your most important pages from the homepage and the menu, and keep every page within a few clicks of the homepage.</p>
+
+  <h3>7. Check speed on mobile</h3>
+  <p>Run your homepage and your most visited page through Google's PageSpeed Insights on the mobile setting, and look at LCP, INP and CLS. The <a href="/core-web-vitals-checker/">Core Web Vitals page</a> explains what each number means. On small business sites the usual culprits are oversized images and slow, cheap hosting.</p>
+
+  <h3>8. If you serve a local area, check your Google Business Profile</h3>
+  <p>For a shop, clinic or service business, the Business Profile decides whether you show up in the map results. Make sure the name, address and phone number match the ones on your website, the business categories are right, and the opening hours are current.</p>
+
+  <h2>Fix in order of impact</h2>
+  <p>An audit usually finds more problems than you can fix at once. Start with anything that stops pages from being indexed, then problems that affect many pages, then issues on single pages. SiteScope sorts its findings this way, by severity multiplied by the share of pages affected, and <a href="/how-issues-are-ranked/">how issues are ranked</a> explains the formula. After you fix things, run the audit again and compare the two reports.</p>
+
+  <h2>Run the crawl now</h2>
+  {% include "_box.html" %}
+</section>
+{% endblock %}

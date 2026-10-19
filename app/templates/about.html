@@ -13,5 +13,7 @@
   <p>Python and FastAPI with an asynchronous httpx crawler, BeautifulSoup for parsing, NetworkX for the internal link graph, SimHash for duplicate detection, Google PageSpeed Insights for Core Web Vitals and PostgreSQL for stored reports. It runs in Docker behind Nginx and Cloudflare.</p>
   <h2>The crawler</h2>
   <p>The SiteScope crawler identifies itself as <code>SiteScopeBot/1.0</code>, follows robots.txt, sends a few requests at a time with a delay between them, and only crawls the site you ask it to audit.</p>
+  <h2>Source code and feedback</h2>
+  <p>The full source code, the test suite and the deployment notes are public on <a href="https://github.com/vikramyadav1404/sitescope">GitHub</a>. If an audit reports something that looks wrong, or you want a check added, open an issue there with the report link. The <a href="/privacy/">privacy policy</a> explains what is stored when you run an audit.</p>
 </section>
 {% endblock %}

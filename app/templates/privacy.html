@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Privacy policy</h1>
+  <p class="lead">What SiteScope stores, which services it uses, and how to have an audit removed. Last updated 19 October 2026.</p>
+</section>
+<section>
+  <h2>What SiteScope stores</h2>
+  <p>When you run an audit, SiteScope stores the website address you entered and the audit result, so that the report link keeps working. The result contains only public information from that website: page addresses, titles, status codes and the issues found. SiteScope has no accounts and does not ask for your name or email address.</p>
+
+  <h2>Analytics</h2>
+  {% if ga4_id %}
+  <p>This site uses Google Analytics 4 to count visits and to see which pages people use. Google Analytics sets cookies and collects information such as the pages you view, your approximate location and your device type. Google explains how it uses this information in <a href="https://policies.google.com/technologies/partner-sites">How Google uses information from sites or apps that use its services</a>. You can block it with a browser extension or with Google's <a href="https://tools.google.com/dlpage/gaoptout">opt-out browser add-on</a>.</p>
+  {% else %}
+  <p>This site does not currently use analytics cookies.</p>
+  {% endif %}
+
+  <h2>Hosting and security</h2>
+  <p>The site runs on a server in Microsoft Azure's Central India region and is served through Cloudflare, which processes every request to protect the site from attacks and may set a security cookie. The web server keeps standard access logs, which include IP addresses, for a short time for troubleshooting.</p>
+
+  <h2>Crawling other websites</h2>
+  <p>SiteScope's crawler identifies itself as SiteScopeBot and follows robots.txt. If you own a website and do not want it audited, add these two lines to your robots.txt:</p>
+  <pre><code>User-agent: SiteScopeBot
+Disallow: /</code></pre>
+
+  <h2>Removing an audit</h2>
+  <p>To have an audit report removed, open an issue on the <a href="https://github.com/vikramyadav1404/sitescope/issues">SiteScope GitHub repository</a> with the report link, and it will be deleted.</p>
+</section>
+{% endblock %}

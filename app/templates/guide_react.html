@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Is my React website SEO friendly? A 10-minute check","author":{"@type":"Person","name":"Vikram Yadav"},"publisher":{"@type":"Organization","name":"SiteScope","url":"https://vikramyadav.me/"},"datePublished":"2026-10-19","dateModified":"2026-10-19","mainEntityOfPage":"{{ canonical }}"}
+</script>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Is my React website SEO friendly?</h1>
+  <p class="lead">A React site can rank well, but only if crawlers can read it. These six checks take about ten minutes and need nothing but a browser.</p>
+</section>
+<section>
+  <h2>Why React sites run into SEO problems</h2>
+  <p>A plain client-side React app, such as one started with Vite, sends the browser an almost empty HTML file: a root div and a script tag. The text, the links and often the title appear only after JavaScript runs.</p>
+  <p>Google can run that JavaScript. Googlebot fetches the HTML, queues the page for rendering, then renders it in an up-to-date Chromium and indexes the result. But rendering can be delayed, and it fails when a script throws an error or a file it needs is blocked. Many other crawlers skip rendering altogether: a December 2024 server-log study by Vercel and MERJ found that GPTBot, ClaudeBot and PerplexityBot do not execute JavaScript, so a client-rendered page looks nearly empty to them.</p>
+
+  <h2>The 10-minute check</h2>
+  <h3>1. Compare view-source with Inspect</h3>
+  <p>Open a page you want to rank and press Ctrl+U (Cmd+Option+U on a Mac). This shows the raw HTML your server sent. Search it for a sentence from the middle of the page. Then right-click the page and choose Inspect, which shows the page after JavaScript ran. If the sentence appears in Inspect but not in view-source, that content depends on JavaScript.</p>
+
+  <h3>2. Find the title and meta description in the raw HTML</h3>
+  <p>In the same view-source window, search for <code>&lt;title&gt;</code> and <code>name="description"</code>. If every route shows the same title, or the tags only show up in Inspect, they are being set in the browser, for example by React Helmet in a client-only app. A crawler that does not render sees your default title on every page.</p>
+
+  <h3>3. Check that your links are real links</h3>
+  <p>Navigation should be made of <code>&lt;a href="/pricing/"&gt;</code> elements. React Router's <code>&lt;Link&gt;</code> renders one, so it is fine. A button or div with an onClick handler that calls <code>navigate()</code> is not a link, and crawlers never discover the page behind it. In Inspect, click on a menu item and confirm it is an <code>a</code> element with an <code>href</code>.</p>
+
+  <h3>4. Visit a URL that should not exist</h3>
+  <p>Open <code>yoursite.com/this-page-does-not-exist</code> with the Network tab of DevTools open. Many single-page apps return the same <code>index.html</code> with status 200 for every path and only show "not found" on screen. Google treats these as soft 404s, and broken URLs can end up indexed. A missing page should return status 404.</p>
+
+  <h3>5. Make sure robots.txt does not block your scripts</h3>
+  <p>Open <code>yoursite.com/robots.txt</code>. If it disallows folders such as <code>/static/</code> or <code>/assets/</code>, or all <code>.js</code> files, Google cannot fetch the files it needs to render your pages.</p>
+
+  <h3>6. See the page the way Google saw it</h3>
+  <p>In Google Search Console, run URL Inspection on a key page, choose Test live URL, then View tested page. The HTML tab shows the rendered HTML Google produced, and the screenshot shows whether your main content actually loaded.</p>
+
+  <h2>What to fix first</h2>
+  <ul>
+    <li><strong>Content or links missing from the raw HTML</strong> on pages you want to rank: render those pages on the server. Next.js, React Router's framework mode and Astro can all send finished HTML.</li>
+    <li><strong>A small site with a few routes that rarely change:</strong> prerendering each route to static HTML at build time is often enough.</li>
+    <li><strong>Titles and descriptions set in the browser:</strong> set them per route on the server, along with the canonical tag.</li>
+    <li><strong>Every path returns 200:</strong> make unknown paths return a real 404 status.</li>
+    <li><strong>onClick navigation:</strong> replace it with links that have an href.</li>
+  </ul>
+
+  <h2>Check every page at once</h2>
+  <p>The steps above test one page at a time. SiteScope reads every page of your site as raw HTML, the way non-rendering crawlers do, and flags pages with fewer than 200 words of text, missing or duplicate titles, and broken links. The <a href="/javascript-seo-checker/">JavaScript SEO checker</a> page explains what it looks for.</p>
+  {% include "_box.html" %}
+</section>
+{% endblock %}
