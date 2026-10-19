@@ -1,138 +1,116 @@
-# SiteScope
+SiteScope
 
-A free technical SEO audit tool. Enter a website; SiteScope crawls it, checks every page, and ranks the issues by
-**Priority = Severity × % of pages affected**.
+Live: vikramyadav.me
 
-CSET489 mini-project, Bennett University — Vikram Yadav (E23CSEU2360).
+A free technical SEO audit tool that crawls a whole website instead of one URL, and ranks what it finds by one rule: priority = severity × share of pages affected. A missing alt text on every page outranks a broken link on one; a 5xx on half the site outranks both. Most free checkers stop at a single page and hand back an unordered list, so the question "what do I fix first" is left to the user. Everything else here — the crawler, the link graph, the duplicate detection — exists to give that score honest inputs.
 
-## What it checks
+Architecture
+audit row,result as JSONB
+background task
+robots.txt, sitemap,pages, link checks
+optional
+Browserserver-rendered HTML
+Cloudflareproxied, SSL Full (strict)
+Nginx 1.24Let's Encrypt cert
+FastAPI + Jinja2uvicorn, Docker
+PostgreSQL 16Docker volume
+Async crawlerasyncio + httpx
+Target website
+PageSpeed Insights API
 
-| Module | What it does |
-|---|---|
-| Async crawler (`app/crawler.py`) | Breadth-first crawl with asyncio + httpx, robots.txt, XML sitemaps, rate limiting, URL normalisation |
-| On-page checks (`app/checks.py`) | Status codes, redirect chains, noindex, titles, meta descriptions, H1, canonical, alt text, lang, thin content, broken links |
-| Link graph (`app/linkgraph.py`) | NetworkX internal link graph: PageRank, click depth, orphan pages |
-| Duplicates (`app/simhash.py`) | 64-bit SimHash fingerprints flag duplicate and near-duplicate pages |
-| Core Web Vitals (`app/vitals.py`) | LCP, INP, CLS from the PageSpeed Insights API (CrUX field data, else Lighthouse lab data) |
-| JS rendering diff (`app/vitals.py`) | Optional: compares raw HTML with a Playwright-rendered page (`RENDER_JS=1`, Playwright installed) |
-| Safety (`app/safety.py`) | Blocks audits of private addresses (localhost, the VM, 169.254.169.254) |
+One Azure VM (Standard_B2ats_v2, 2 vCPU, 1 GiB RAM, Central India), two containers. No Redis, no queue, no worker: an audit is a FastAPI background task, at most three run at once behind an asyncio.Semaphore, and the finished result is one JSONB column. No JavaScript framework either — every page, including the report, is server-rendered, because a tool that lectures people about JavaScript SEO should be readable by a crawler that runs none.
 
-Stack: Python 3.12, FastAPI, Jinja2 templates, PostgreSQL 16, Docker Compose, Nginx, Cloudflare.
+Layer	Choice
+Language	Python 3.12
+Web	FastAPI 0.115, Jinja2 templates, hand-written CSS with light/dark tokens
+Crawling	asyncio + httpx 0.28, urllib.robotparser, XML sitemaps and sitemap indexes
+Parsing	BeautifulSoup 4.12
+Analysis	NetworkX 3.4 for the link graph, own PageRank, own 64-bit SimHash
+Data	PostgreSQL 16 via psycopg 3; in-memory store when DATABASE_URL is unset
+Deploy	Docker Compose, Nginx reverse proxy, Certbot, Cloudflare DNS, UFW
+Tests	pytest, 8 tests against a fake site on httpx.MockTransport. No network needed. GitHub Actions on every push
 
-## Run locally
+8 SEO landing pages, a report page, a small JSON API, robots.txt and sitemap.xml. 25 issue types.
 
-```bash
+Implemented vs planned
+	Status
+Site-wide crawl: BFS by depth, robots.txt, sitemaps, rate limiting, URL normalisation	Implemented
+On-page checks: status codes, redirect chains, noindex, titles, meta descriptions, H1, canonical, alt text, lang, thin content	Implemented
+Broken internal and external links	Implemented — HEAD first, GET fallback, first 200 external links only
+Internal link graph: PageRank, click depth, orphan pages	Implemented
+Duplicate and near-duplicate pages	Implemented — SimHash on 3-word shingles, Hamming distance ≤ 3
+Priority score and health score	Implemented
+SSRF guard	Implemented — see below
+Core Web Vitals (LCP, INP, CLS)	Implemented, but the live server has no PageSpeed API key, so Google answers 429 and the report says so
+JavaScript rendering diff	Implemented, optional — off in production; Playwright is not in the image
+Pages per audit	Capped at 300, depth 6
+PDF report	Not built. The report is an HTML page with a JSON download
+Accounts, history, scheduled re-audits	Not built
+Decisions and problems
+
+What was wrong or risky, why it mattered, what it is now.
+
+A server that fetches any URL a stranger types is an SSRF hole. The obvious audit target for an attacker is not a website — it is http://169.254.169.254/ (Azure's instance metadata service), http://localhost:8000/, or the Postgres container. app/safety.py resolves the host and refuses private, loopback, link-local and reserved addresses, and non-HTTP schemes. It runs as an httpx request hook, not once at the start, so every redirect hop is checked too — a public URL that 302s to the metadata service is stopped at the hop, not after it. A test asserts that localhost, 127.0.0.1, 169.254.169.254 and ftp:// are all refused.
+
+nx.pagerank pulled in numpy and scipy. Two heavy dependencies for one function, on a 1 GiB VM. PageRank on a few hundred nodes is a small power iteration, so it is written out in app/linkgraph.py (damping 0.85, dangling pages share their rank with every page, as in Brin and Page). A test compares it against NetworkX's own pure-Python reference and requires agreement to 1e-4.
+
+Ranking by severity alone gets the order wrong. A severity-3 issue on one page out of 300 is less urgent than a severity-1 issue on all of them. Multiplying by the share of pages affected fixes that, and capping each issue at 100 in the health score stops one site-wide problem from flattening the whole number to zero.
+
+Report pages are user-generated thin content. Every audit creates a URL. Left indexable, an SEO tool would be generating thousands of near-identical pages on its own domain. Report pages send noindex, and robots.txt disallows /report/ and /api/.
+
+Moving DNS could have taken down two other projects. vikramyadav.me already served Nexora and Quadrantcode as subdomains on Vercel. Switching the nameservers to Cloudflare replaces the whole zone, so any record not recreated first stops resolving the moment the change propagates. Both CNAMEs were added in Cloudflare as DNS only (Vercel issues its own certificates and needs the traffic unproxied) and checked before the nameserver change. Quadrantcode was missing from the first copy and was caught before the switch, not after.
+
+SSL had to be issued before the proxy went on. Let's Encrypt's HTTP-01 check has to reach the VM itself. Order used: records grey, wait for propagation and confirm it with dig, run Certbot, then turn the records orange and set Cloudflare to Full (strict) so Cloudflare verifies the origin certificate instead of trusting anything.
+
+The planned VM size did not exist. B1s is not offered to Azure for Students in Central India, and B2ats_v2 is restricted in availability zones 1 and 2. The VM is B2ats_v2 with no zone, plus 1 GB of swap for the 1 GiB of RAM. Server setup is one script (deploy/azure-setup.sh) passed as Azure custom data, so the VM can be rebuilt from nothing.
+
+What's still open
+HEAD requests return 405. FastAPI routes are GET-only, so uptime monitors and some crawlers that send HEAD get an error on every page. The fix is a small middleware that answers HEAD like GET without a body; it is not deployed yet.
+The SSRF guard has a DNS-rebinding gap. The host is resolved once by the guard and again by httpx when it connects; a hostile DNS server could answer differently the second time. Closing it means pinning the connection to the IP the guard checked.
+Core Web Vitals are empty on the live site until a PageSpeed Insights API key is set.
+An audit lost to a restart stays "running" forever. Background tasks live in the app process; nothing marks orphaned rows as failed on startup.
+No per-IP limit on starting audits. Only concurrency is capped, at three; a fourth request waits.
+External link checks stop at 200 links per audit.
+What I would do next
+Set the PageSpeed key and mark orphaned audits failed on boot. Both are small, and both currently make the live report look worse than the code is.
+Pin the resolved IP in the SSRF guard. The current check is good against typed URLs and redirects, not against a determined attacker with their own DNS.
+Ship the HEAD fix.
+A PDF export of the report, since that is what people forward to a client or a manager.
+Saved audits and re-crawls, so a site can be compared against its own last audit instead of judged once.
+Local setup
+bash
 pip install -r requirements-dev.txt
 pytest -q                                  # 8 tests, no network needed
-uvicorn app.main:app --reload              # http://127.0.0.1:8000 (in-memory store)
-```
+uvicorn app.main:app --reload              # http://127.0.0.1:8000, in-memory store
 
-With Docker and PostgreSQL:
+With PostgreSQL, the way it runs in production:
 
-```bash
-cp .env.example .env                       # set POSTGRES_PASSWORD
+bash
+cp .env.example .env                       # set POSTGRES_PASSWORD; PAGESPEED_API_KEY optional
 docker compose up -d --build
 curl http://127.0.0.1:8000/health
-```
 
-## Deploy on Azure (Azure for Students) behind Cloudflare
+The test suite serves a small fake website through httpx.MockTransport — robots.txt with a disallowed path, a sitemap with an orphan page, a 404, a noindex page, a dead external link, two pages sharing a title and their text — and checks that each of those comes back as the right issue, that issues are sorted by priority, and that the SSRF guard holds.
 
-Take a screenshot at each step marked 📸 — the report needs them (Sections 7–8).
+Deploying
 
-### 1. Put the code on GitHub
-Create an empty repo `sitescope` on github.com, then on your laptop:
-```bash
-cd sitescope
-git init && git add . && git commit -m "SiteScope v1"
-git branch -M main
-git remote add origin https://github.com/vikramyadav1404/sitescope.git
-git push -u origin main
-```
+deploy/azure-setup.sh turns a fresh Ubuntu 24.04 VM into the production server: packages, UFW (SSH, 80, 443), swap, Docker, the repo in /opt/sitescope, a random database password in .env, Docker Compose, and the Nginx site. Pass it as Azure custom data:
 
-### 2. Create the VM (Azure portal) 📸
-portal.azure.com → **Virtual machines → Create**
-- Subscription: *Azure for Students* · Resource group: new `sitescope-rg`
-- Name `sitescope-vm` · Region **Central India** · Image **Ubuntu Server 24.04 LTS**
-- Size **B1s** (or B2ats_v2 / B2s if B1s is unavailable)
-- Authentication **SSH public key**, username `azureuser`, download the `.pem` key
-- Inbound ports: **SSH (22), HTTP (80), HTTPS (443)**
-- Networking → Public IP → set to **Static** (so DNS never breaks)
+bash
+#!/bin/bash
+curl -fsSL https://raw.githubusercontent.com/vikramyadav1404/sitescope/main/deploy/azure-setup.sh | bash
 
-Note the **public IP**.
+Then point DNS at the VM (DNS only), run sudo certbot --nginx -d vikramyadav.me -d [www.vikramyadav.me](https://www.vikramyadav.me), switch the records to Proxied and Cloudflare to Full (strict). deploy/evidence.sh prints the server facts — OS, Nginx, Docker, Postgres version, firewall, DNS, certificate expiry — without printing any secret.
 
-### 3. Prepare the server
-```bash
-chmod 400 ~/Downloads/sitescope-vm_key.pem
-ssh -i ~/Downloads/sitescope-vm_key.pem azureuser@<PUBLIC_IP>
+Configuration
+Variable	Default	Meaning
+DATABASE_URL	empty (memory)	PostgreSQL DSN; set by Docker Compose
+POSTGRES_PASSWORD	—	Database password (Compose)
+PAGESPEED_API_KEY	empty	Without it Google often returns 429
+SITE_URL	https://vikramyadav.me	Canonical tags and sitemap
+MAX_PAGES	300	Pages per audit
+CONCURRENCY / REQUEST_DELAY_MS	5 / 200	Crawl politeness
+RENDER_JS	off	1 enables the Playwright diff (needs Playwright + Chromium)
+API
 
-sudo apt update && sudo apt upgrade -y
-sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp
-sudo ufw --force enable && sudo ufw status
-# 1 GB of swap helps on a 1 GB B1s
-sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-curl -fsSL https://get.docker.com | sudo sh
-docker --version && docker compose version
-```
-
-### 4. Start SiteScope
-```bash
-git clone https://github.com/vikramyadav1404/sitescope.git
-cd sitescope && cp .env.example .env
-nano .env        # set a long POSTGRES_PASSWORD; add PAGESPEED_API_KEY (free, Google Cloud Console)
-sudo docker compose up -d --build
-sudo docker compose ps
-curl http://127.0.0.1:8000/health
-```
-
-### 5. Nginx
-```bash
-sudo apt install -y nginx
-sudo cp deploy/nginx-sitescope.conf /etc/nginx/sites-available/vikramyadav.me
-sudo ln -s /etc/nginx/sites-available/vikramyadav.me /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-### 6. Cloudflare DNS 📸
-vikramyadav.me is already added to Cloudflare (Free plan). In **DNS → Records**:
-1. **Add** `CNAME quadrantcode → 2ec3f6ab8e29d766.vercel-dns-017.com`, **DNS only (grey)**. (`nexora` is already there.) Do this *before* step 3 below or quadrantcode.vikramyadav.me will stop working.
-2. **Edit** the four `A vikramyadav.me → 185.199.10x.153` (GitHub Pages) records: change one to the VM's public IP and delete the other three. Set it to **DNS only (grey)** for now. Keep `CNAME www → vikramyadav.me`, also grey for now.
-3. **Namecheap** → Domain List → vikramyadav.me → Manage → Nameservers → **Custom DNS**:
-   `junade.ns.cloudflare.com`, `magnolia.ns.cloudflare.com` → ✓ save. 📸
-4. Wait until Cloudflare emails "vikramyadav.me is now active" (minutes to a few hours). Check: `dig +short NS vikramyadav.me`.
-
-### 7. SSL (Full Strict) 📸
-On the VM (records still grey, so Let's Encrypt reaches the server directly):
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d vikramyadav.me -d www.vikramyadav.me
-sudo certbot renew --dry-run
-```
-Then in Cloudflare: turn the `vikramyadav.me` A record and `www` CNAME to **Proxied (orange)**, and set
-**SSL/TLS → Overview → Full (strict)**. Leave `nexora` and `quadrantcode` grey (Vercel needs DNS only).
-
-### 8. Check and collect evidence 📸
-```bash
-curl -I https://vikramyadav.me
-cd ~/sitescope && bash deploy/evidence.sh vikramyadav.me | tee evidence.txt
-```
-`evidence.txt` has the OS, Nginx, Docker and PostgreSQL versions, firewall, DNS, headers and certificate expiry for
-Sections 7–8 and Appendix A. Then run an audit on https://vikramyadav.me and screenshot the report.
-
-## Configuration
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `DATABASE_URL` | empty (memory) | PostgreSQL DSN; set automatically in Docker Compose |
-| `POSTGRES_PASSWORD` | — | Database password (Compose) |
-| `PAGESPEED_API_KEY` | empty | Google PageSpeed Insights API key; without it Google often returns HTTP 429 |
-| `SITE_URL` | https://vikramyadav.me | Used for canonical tags and the sitemap |
-| `MAX_PAGES` | 300 | Pages per audit |
-| `CONCURRENCY` / `REQUEST_DELAY_MS` | 5 / 200 | Crawl politeness |
-| `RENDER_JS` | off | `1` enables the Playwright rendering diff (needs Playwright + Chromium) |
-
-## API
-
-`POST /api/audits {"url": "example.com", "max_pages": 50}` → `{"id": ..., "report_url": ...}`
-`GET /api/audits/{id}` → status and full JSON result. Interactive docs at `/api/docs`.
+POST /api/audits {"url": "example.com", "max_pages": 50} → 202 {"id", "status": "queued", "report_url"} GET /api/audits/{id} → status and the full JSON result. Interactive docs at /api/docs.
