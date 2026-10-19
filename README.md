@@ -5,18 +5,21 @@ Live: vikramyadav.me
 A free technical SEO audit tool that crawls a whole website instead of one URL, and ranks what it finds by one rule: priority = severity × share of pages affected. A missing alt text on every page outranks a broken link on one; a 5xx on half the site outranks both. Most free checkers stop at a single page and hand back an unordered list, so the question "what do I fix first" is left to the user. Everything else here — the crawler, the link graph, the duplicate detection — exists to give that score honest inputs.
 
 Architecture
-audit row,result as JSONB
-background task
-robots.txt, sitemap,pages, link checks
-optional
-Browserserver-rendered HTML
-Cloudflareproxied, SSL Full (strict)
-Nginx 1.24Let's Encrypt cert
-FastAPI + Jinja2uvicorn, Docker
-PostgreSQL 16Docker volume
-Async crawlerasyncio + httpx
-Target website
-PageSpeed Insights API
+
+```mermaid
+flowchart LR
+    B["Browser<br/>server-rendered HTML"] --> CF["Cloudflare<br/>proxied, SSL Full (strict)"]
+    CF --> NG["Nginx 1.24<br/>Let's Encrypt cert"]
+    NG --> API["FastAPI + Jinja2<br/>uvicorn, Docker"]
+    API -- "audit row,<br/>result as JSONB" --> DB[("PostgreSQL 16<br/>Docker volume")]
+    API -- "background task" --> CR["Async crawler<br/>asyncio + httpx"]
+    CR -- "robots.txt, sitemap,<br/>pages, link checks" --> T["Target website"]
+    CR -. "optional" .-> PSI["PageSpeed Insights API"]
+
+    style CF fill:#f38020,stroke:#f38020,color:#ffffff
+    style API fill:#1e3a6e,stroke:#1e3a6e,color:#ffffff
+    style DB fill:#336791,stroke:#336791,color:#ffffff
+```
 
 One Azure VM (Standard_B2ats_v2, 2 vCPU, 1 GiB RAM, Central India), two containers. No Redis, no queue, no worker: an audit is a FastAPI background task, at most three run at once behind an asyncio.Semaphore, and the finished result is one JSONB column. No JavaScript framework either — every page, including the report, is server-rendered, because a tool that lectures people about JavaScript SEO should be readable by a crawler that runs none.
 
