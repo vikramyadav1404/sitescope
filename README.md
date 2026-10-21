@@ -52,7 +52,8 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Analysis | NetworkX 3.4 for the link graph, own PageRank, own 64-bit SimHash |
 | Data | PostgreSQL 16 via psycopg 3; in-memory store when `DATABASE_URL` is unset |
 | Deploy | Docker Compose, Nginx reverse proxy, Certbot, Cloudflare DNS, UFW |
-| Tests | pytest, 10 tests against a fake site on `httpx.MockTransport`. No network needed. GitHub Actions on every push |
+| Reports | HTML page, JSON download, PDF via fpdf2 |
+| Tests | pytest, 16 tests against a fake site on `httpx.MockTransport`. No network needed. GitHub Actions on every push |
 
 11 public pages (tools, two guides, about and privacy), a report page, a small JSON API, `robots.txt` and `sitemap.xml`. 25 issue types. Optional Google Analytics 4 and Search Console tags, switched on by environment variables.
 
@@ -61,23 +62,28 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | | Status |
 |---|---|
 | Site-wide crawl: BFS by depth, robots.txt, sitemaps, rate limiting, URL normalisation | Implemented |
-| On-page checks: status codes, redirect chains, noindex, titles, meta descriptions, H1, canonical, alt text, lang, thin content | Implemented |
+| On-page checks: status codes, redirect chains, noindex, titles, meta descriptions, H1, canonical, alt text, lang, thin content (under 200 words) | Implemented |
 | Broken internal and external links | Implemented — HEAD first, GET fallback, first 200 external links only |
 | Internal link graph: PageRank, click depth, orphan pages | Implemented |
 | Duplicate and near-duplicate pages | Implemented — SimHash on 3-word shingles, Hamming distance ≤ 3 |
 | Priority score and health score | Implemented |
-| SSRF guard | Implemented — see below |
+| SSRF guard | Implemented, including the DNS-rebinding fix — see below |
 | Core Web Vitals (LCP, INP, CLS) | Implemented, but the live server has no PageSpeed API key, so Google answers 429 and the report says so |
 | JavaScript rendering diff | Implemented, optional — off in production; Playwright is not in the image |
 | Pages per audit | Capped at 300, depth 6 |
-| PDF report | Not built. The report is an HTML page with a JSON download |
-| Accounts, history, scheduled re-audits | Not built |
+| PDF report | Implemented — `/report/{id}/pdf` |
+| Compare with the previous audit | Implemented — every finished audit is saved; a re-run of the same URL shows what was fixed, what is new and the change in health score |
+| Per-IP limit on starting audits | Implemented — 10 per hour by default |
+| Restart recovery | Implemented — audits left queued or running are marked failed on startup |
+| Accounts, scheduled re-audits | Not built |
 
 ## Decisions and problems
 
 *What was wrong or risky, why it mattered, what it is now.*
 
 **A server that fetches any URL a stranger types is an SSRF hole.** The obvious audit target for an attacker is not a website — it is `http://169.254.169.254/` (Azure's instance metadata service), `http://localhost:8000/`, or the Postgres container. `app/safety.py` resolves the host and refuses private, loopback, link-local and reserved addresses, and non-HTTP schemes. It runs as an httpx request hook, not once at the start, so every redirect hop is checked too — a public URL that 302s to the metadata service is stopped at the hop, not after it. A test asserts that `localhost`, `127.0.0.1`, `169.254.169.254` and `ftp://` are all refused.
+
+**The first guard had a DNS-rebinding gap.** The hook resolved the host, and then httpx resolved it again to connect; a hostile DNS server could answer with a public IP the first time and `169.254.169.254` the second. `GuardedBackend` in `app/safety.py` now sits under httpx as its network layer: it resolves once, refuses the connection if any address is private, and connects to that exact IP. TLS still verifies the certificate against the hostname. A test feeds it a public answer and then a private one and checks that only the public IP is ever connected to.
 
 **`nx.pagerank` pulled in numpy and scipy.** Two heavy dependencies for one function, on a 1 GiB VM. PageRank on a few hundred nodes is a small power iteration, so it is written out in `app/linkgraph.py` (damping 0.85, dangling pages share their rank with every page, as in Brin and Page). A test compares it against NetworkX's own pure-Python reference and requires agreement to 1e-4.
 
@@ -93,24 +99,22 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 
 ## What's still open
 
-- **The SSRF guard has a DNS-rebinding gap.** The host is resolved once by the guard and again by httpx when it connects; a hostile DNS server could answer differently the second time. Closing it means pinning the connection to the IP the guard checked.
-- **Core Web Vitals are empty on the live site** until a PageSpeed Insights API key is set.
-- **An audit lost to a restart stays "running" forever.** Background tasks live in the app process; nothing marks orphaned rows as failed on startup.
-- **No per-IP limit on starting audits.** Only concurrency is capped, at three; a fourth request waits.
+- **Core Web Vitals are empty on the live site** until a PageSpeed Insights API key is set in `.env` on the VM.
+- **The per-IP limit trusts `CF-Connecting-IP`.** That is right for traffic through Cloudflare, but the VM's ports 80 and 443 are open to everyone, so a client that connects to the VM's IP directly can send any value. Restricting the firewall to Cloudflare's IP ranges would close it.
+- **The limit lives in memory** in one app process, so it resets when the app restarts. Fine for one container; a second one would need Postgres or Redis for it.
 - **External link checks stop at 200 links per audit.**
 
 ## What I would do next
 
-1. **Set the PageSpeed key and mark orphaned audits failed on boot.** Both are small, and both currently make the live report look worse than the code is.
-2. **Pin the resolved IP in the SSRF guard.** The current check is good against typed URLs and redirects, not against a determined attacker with their own DNS.
-3. **A PDF export of the report**, since that is what people forward to a client or a manager.
-4. **Saved audits and re-crawls**, so a site can be compared against its own last audit instead of judged once.
+1. **Set the PageSpeed key**, so Core Web Vitals show up in every report.
+2. **Allow only Cloudflare's IP ranges on ports 80 and 443** with UFW, which also makes `CF-Connecting-IP` trustworthy.
+3. **Scheduled re-audits** with an email when the health score drops, which needs accounts.
 
 ## Local setup
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                                  # 10 tests, no network needed
+pytest -q                                  # 16 tests, no network needed
 uvicorn app.main:app --reload              # http://127.0.0.1:8000, in-memory store
 ```
 
@@ -148,12 +152,15 @@ Then point DNS at the VM (DNS only), run `sudo certbot --nginx -d vikramyadav.me
 | `GA4_ID` | empty | Google Analytics 4 measurement ID (`G-…`); empty means no analytics tag |
 | `GSC_VERIFICATION` | empty | Search Console HTML-tag token, only if not verifying by DNS |
 | `RENDER_JS` | off | `1` enables the Playwright diff (needs Playwright + Chromium) |
+| `AUDITS_PER_IP_PER_HOUR` | `10` | Audits one IP can start per rolling hour; `0` turns the limit off |
 
 ## API
 
 ```
-POST /api/audits {"url": "example.com", "max_pages": 50} → 202 {"id", "status": "queued", "report_url"}
+POST /api/audits {"url": "example.com", "max_pages": 50} → 202 {"id", "status": "queued", "report_url", "pdf_url"}
+                                                   → 429 with Retry-After when the per-IP limit is reached
 GET /api/audits/{id} → status and the full JSON result.
+GET /report/{id}/pdf → the finished report as a PDF (409 while the audit is still running)
 ```
 
 Interactive docs at `/api/docs`.
