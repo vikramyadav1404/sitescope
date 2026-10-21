@@ -171,3 +171,126 @@ def test_pagerank_matches_networkx_reference():
     for k in ref:
         assert abs(mine[k] - ref[k]) < 1e-4
     assert abs(sum(mine.values()) - 1) < 1e-6
+
+
+def test_guarded_backend_connects_to_the_checked_ip():
+    """DNS rebinding: the backend resolves once and connects to that exact IP,
+    so a second, different DNS answer is never used."""
+    from app.safety import BlockedTarget, GuardedBackend
+
+    connected = []
+
+    class FakeInner:
+        async def connect_tcp(self, host, port, **kw):
+            connected.append((host, port))
+            return "stream"
+
+        async def sleep(self, s):
+            pass
+
+    answers = iter(["93.184.216.34", "127.0.0.1"])  # public for the check, private afterwards
+
+    async def resolver(host, port):
+        from app.safety import _public_addresses
+        return _public_addresses(host, [(None, None, None, None, (next(answers), port))])[0]
+
+    backend = GuardedBackend(inner=FakeInner(), resolver=resolver)
+    assert asyncio.run(backend.connect_tcp("rebind.test", 443)) == "stream"
+    assert connected == [("93.184.216.34", 443)]
+    with pytest.raises(BlockedTarget):  # the private answer is refused, not connected to
+        asyncio.run(backend.connect_tcp("rebind.test", 443))
+    assert len(connected) == 1
+
+
+def test_guarded_backend_refuses_private_hosts():
+    from app.safety import BlockedTarget, GuardedBackend, resolve_public
+    with pytest.raises(BlockedTarget):
+        asyncio.run(GuardedBackend().connect_tcp("localhost", 80))
+    with pytest.raises(BlockedTarget):
+        asyncio.run(resolve_public("127.0.0.1", 80))
+
+
+def test_unfinished_audits_fail_after_restart():
+    from app.store import MemoryStore, RESTART_ERROR
+    s = MemoryStore()
+    a, b, c = s.create("https://a.test/"), s.create("https://b.test/"), s.create("https://c.test/")
+    s.update(b, "running")
+    s.update(c, "done", result={})
+    assert s.fail_unfinished() == 2
+    assert s.get(a)["status"] == s.get(b)["status"] == "failed"
+    assert s.get(a)["error"] == RESTART_ERROR
+    assert s.get(c)["status"] == "done"
+
+
+def test_rate_limiter_window():
+    from app.ratelimit import RateLimiter
+    now = [0.0]
+    rl = RateLimiter(2, window_s=3600, clock=lambda: now[0])
+    assert rl.retry_after("ip") == 0 and rl.retry_after("ip") == 0
+    assert rl.retry_after("ip") > 0
+    assert rl.retry_after("other") == 0
+    now[0] = 3600
+    assert rl.retry_after("ip") == 0
+
+
+def test_api_rate_limit_per_ip(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.ratelimit import RateLimiter
+
+    async def no_job(*a):
+        pass
+    monkeypatch.setattr(main, "_validate", lambda url: "https://example.com/")
+    monkeypatch.setattr(main, "_job", no_job)
+    monkeypatch.setattr(main, "limiter", RateLimiter(2))
+    tc = TestClient(main.app)
+    hdr = {"CF-Connecting-IP": "203.0.113.7"}
+    assert tc.post("/api/audits", json={"url": "example.com"}, headers=hdr).status_code == 202
+    assert tc.post("/api/audits", json={"url": "example.com"}, headers=hdr).status_code == 202
+    res = tc.post("/api/audits", json={"url": "example.com"}, headers=hdr)
+    assert res.status_code == 429 and int(res.headers["retry-after"]) > 0
+    assert tc.post("/api/audits", json={"url": "example.com"},
+                   headers={"CF-Connecting-IP": "203.0.113.8"}).status_code == 202
+    form = tc.post("/start", data={"url": "example.com", "back": "/"}, headers=hdr, follow_redirects=False)
+    assert form.status_code == 303 and "Too+many+audits" in form.headers["location"]
+
+
+def test_compare_pdf_and_report(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.compare import compare
+
+    async def go():
+        async with client() as c:
+            return await run_audit("example.com", client=c, with_vitals=False)
+    new = asyncio.run(go())
+    old = dict(new, health_score=new["health_score"] - 7, issues=[
+        dict(new["issues"][0], pages_affected=new["issues"][0]["pages_affected"] + 3),
+        {"id": "slow_response", "title": "Server response slower than 1.5 s", "level": "Warning",
+         "pages_affected": 2},
+    ])
+    cmp = compare(old, new)
+    assert cmp["health_delta"] == 7
+    assert [i["id"] for i in cmp["fixed"]] == ["slow_response"]
+    assert cmp["changed"][0]["delta"] == -3
+    assert {i["id"] for i in cmp["new"]} == {i["id"] for i in new["issues"][1:]}
+
+    first = main.store.create("https://example.com/")
+    main.store.update(first, "done", result=old)
+    second = main.store.create("https://example.com/")
+    main.store.update(second, "done", result=new)
+    tc = TestClient(main.app)
+
+    page = tc.get(f"/report/{second}/").text
+    assert "Since the last audit" in page and f"/report/{first}/" in page
+    assert f"/report/{second}/pdf" in page and "Run this audit again" in page
+    assert "Since the last audit" not in tc.get(f"/report/{first}/").text  # nothing before it
+
+    pdf = tc.get(f"/report/{second}/pdf")
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert "attachment" in pdf.headers["content-disposition"]
+
+    running = main.store.create("https://example.com/")
+    assert tc.get(f"/report/{running}/pdf").status_code == 409
+    assert tc.get("/report/nope/pdf").status_code == 404
