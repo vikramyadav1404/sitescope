@@ -13,7 +13,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from . import config
-from .safety import BlockedTarget, guard_request
+from .safety import BlockedTarget, guard_request, guarded_transport
 
 SKIP_EXT = (
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".pdf", ".zip",
@@ -186,6 +186,7 @@ class Crawler:
             headers={"User-Agent": config.USER_AGENT},
             timeout=config.TIMEOUT_S, follow_redirects=True,
             event_hooks={"request": [guard_request]},
+            transport=guarded_transport(), trust_env=False,  # connect only to the IP the guard checked
         )
         try:
             sitemap_refs = await self._load_robots(client)

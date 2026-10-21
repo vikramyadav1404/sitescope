@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS audits (
     finished_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS audits_created_idx ON audits (created_at DESC);
+CREATE INDEX IF NOT EXISTS audits_url_idx ON audits (url, created_at DESC);
 """
+
+RESTART_ERROR = "Stopped by a server restart before it finished. Please run the audit again."
 
 
 class MemoryStore:
@@ -44,6 +47,22 @@ class MemoryStore:
     def recent(self, limit: int = 10) -> list[dict]:
         rows = sorted(self._rows.values(), key=lambda r: r["created_at"], reverse=True)
         return rows[:limit]
+
+    def fail_unfinished(self) -> int:
+        """Mark audits left queued/running by a restart as failed. Returns how many."""
+        n = 0
+        for row in self._rows.values():
+            if row["status"] in ("queued", "running"):
+                row.update(status="failed", error=RESTART_ERROR)
+                n += 1
+        return n
+
+    def previous(self, url: str, before, exclude_id: str) -> dict | None:
+        """The latest finished audit of the same URL that started before `before`."""
+        rows = [r for r in self._rows.values()
+                if r["url"] == url and r["status"] == "done" and r["id"] != exclude_id
+                and r["created_at"] < before]
+        return max(rows, key=lambda r: r["created_at"]) if rows else None
 
 
 class PostgresStore:
@@ -89,6 +108,22 @@ class PostgresStore:
                 "ORDER BY created_at DESC LIMIT %s", (limit,)
             ).fetchall()
         return [dict(zip(("id", "url", "status", "error", "result", "created_at"), r)) for r in rows]
+
+    def fail_unfinished(self) -> int:
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE audits SET status='failed', error=%s, finished_at=now() "
+                "WHERE status IN ('queued','running')", (RESTART_ERROR,))
+            return cur.rowcount
+
+    def previous(self, url: str, before, exclude_id: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT id, url, status, error, result, created_at FROM audits "
+                "WHERE url=%s AND status='done' AND id<>%s AND created_at < %s "
+                "ORDER BY created_at DESC LIMIT 1", (url, exclude_id, before)
+            ).fetchone()
+        return dict(zip(("id", "url", "status", "error", "result", "created_at"), row)) if row else None
 
 
 def make_store():

@@ -20,6 +20,7 @@ MAX_DEPTH = _int("MAX_DEPTH", 6)            # click depth limit
 CONCURRENCY = _int("CONCURRENCY", 5)        # parallel requests
 REQUEST_DELAY_MS = _int("REQUEST_DELAY_MS", 200)  # politeness delay per request
 TIMEOUT_S = _int("TIMEOUT_S", 15)
+AUDITS_PER_IP_PER_HOUR = _int("AUDITS_PER_IP_PER_HOUR", 10)  # 0 = no limit
 USER_AGENT = os.getenv(
     "USER_AGENT", "SiteScopeBot/1.0 (+https://vikramyadav.me/about/)"
 )

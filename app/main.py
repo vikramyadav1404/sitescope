@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import urlencode
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,7 +16,10 @@ from pydantic import BaseModel
 
 from . import config
 from .audit import run_audit
+from .compare import compare
 from .crawler import normalise
+from .pdf import build_pdf
+from .ratelimit import RateLimiter, client_ip
 from .safety import BlockedTarget, check_url
 from .store import make_store
 
@@ -35,6 +39,11 @@ async def lifespan(_app):
             await asyncio.sleep(2)
     else:
         store.init()
+    # Audits run as background tasks inside this process, so any that were queued or
+    # running when the process stopped will never finish. Mark them failed.
+    stale = store.fail_unfinished()
+    if stale:
+        log.warning("marked %d unfinished audits as failed after restart", stale)
     yield
 
 
@@ -70,6 +79,12 @@ templates.env.globals["inline_css"] = Markup((BASE / "static" / "style.css").rea
 templates.env.globals["gsc_verification"] = config.GSC_VERIFICATION
 MAX_RUNNING = 3
 _running = asyncio.Semaphore(MAX_RUNNING)
+limiter = RateLimiter(config.AUDITS_PER_IP_PER_HOUR)
+
+
+def _limit_message(wait_s: int) -> str:
+    return (f"Too many audits from your network. You can start {config.AUDITS_PER_IP_PER_HOUR} per hour; "
+            f"try again in {max(1, round(wait_s / 60))} minutes.")
 
 # slug -> (template, title, meta description)
 PAGES = {
@@ -142,12 +157,15 @@ async def _job(audit_id: str, url: str, max_pages: int | None) -> None:
 
 
 @app.post("/start", include_in_schema=False)
-async def start_form(background: BackgroundTasks, url: str = Form(...), back: str = Form("/")):
+async def start_form(request: Request, background: BackgroundTasks, url: str = Form(...), back: str = Form("/")):
     back = back if back in PAGES else "/"
     try:
         target = _validate(url)
     except ValueError as exc:
-        return RedirectResponse(f"{back}?error={exc}", status_code=303)
+        return RedirectResponse(f"{back}?{urlencode({'error': str(exc)})}", status_code=303)
+    wait = limiter.retry_after(client_ip(request))
+    if wait:
+        return RedirectResponse(f"{back}?{urlencode({'error': _limit_message(wait)})}", status_code=303)
     audit_id = store.create(target)
     background.add_task(_job, audit_id, target, None)
     return RedirectResponse(f"/report/{audit_id}/", status_code=303)
@@ -158,11 +176,39 @@ async def report(request: Request, audit_id: str):
     row = store.get(audit_id)
     if not row:
         raise HTTPException(404, "Audit not found")
+    prev, comparison = _comparison(row)
     return templates.TemplateResponse(request, "report.html", {
         "title": f"SEO audit for {row['url']} | SiteScope",
         "description": "SiteScope technical SEO audit report.",
         "canonical": f"{config.SITE_URL}/report/{audit_id}/",
         "path": "/report/", "row": row, "r": row.get("result"), "noindex": True,
+        "prev": prev, "cmp": comparison,
+    })
+
+
+def _comparison(row: dict) -> tuple[dict | None, dict | None]:
+    """The previous finished audit of the same URL, and what changed since then."""
+    if row.get("status") != "done" or not row.get("result"):
+        return None, None
+    prev = store.previous(row["url"], row["created_at"], row["id"])
+    if not prev or not prev.get("result"):
+        return None, None
+    return prev, compare(prev["result"], row["result"])
+
+
+@app.get("/report/{audit_id}/pdf", include_in_schema=False)
+async def report_pdf(audit_id: str):
+    row = store.get(audit_id)
+    if not row:
+        raise HTTPException(404, "Audit not found")
+    if row["status"] != "done" or not row.get("result"):
+        raise HTTPException(409, "The audit has not finished yet")
+    _, comparison = _comparison(row)
+    pdf = await asyncio.to_thread(build_pdf, row, row["result"], comparison)
+    host = (row["result"].get("url") or row["url"]).split("//")[-1].split("/")[0] or "site"
+    return Response(pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="sitescope-{host}-{audit_id}.pdf"',
+        "X-Robots-Tag": "noindex",
     })
 
 
@@ -172,15 +218,19 @@ class AuditIn(BaseModel):
 
 
 @app.post("/api/audits", status_code=202)
-async def api_create(body: AuditIn, background: BackgroundTasks):
+async def api_create(body: AuditIn, request: Request, background: BackgroundTasks):
     try:
         target = _validate(body.url)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    wait = limiter.retry_after(client_ip(request))
+    if wait:
+        raise HTTPException(429, _limit_message(wait), headers={"Retry-After": str(wait)})
     max_pages = min(body.max_pages, config.MAX_PAGES) if body.max_pages else None
     audit_id = store.create(target)
     background.add_task(_job, audit_id, target, max_pages)
-    return {"id": audit_id, "status": "queued", "report_url": f"/report/{audit_id}/"}
+    return {"id": audit_id, "status": "queued", "report_url": f"/report/{audit_id}/",
+            "pdf_url": f"/report/{audit_id}/pdf"}
 
 
 @app.get("/api/audits/{audit_id}")
