@@ -7,18 +7,38 @@ A free technical SEO audit tool that crawls a whole website instead of one URL, 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    B["Browser<br/>server-rendered HTML"] --> CF["Cloudflare<br/>proxied, SSL Full (strict)"]
-    CF --> NG["Nginx 1.24<br/>Let's Encrypt cert"]
-    NG --> API["FastAPI + Jinja2<br/>uvicorn, Docker"]
-    API -- "audit row,<br/>result as JSONB" --> DB[("PostgreSQL 16<br/>Docker volume")]
-    API -- "background task" --> CR["Async crawler<br/>asyncio + httpx"]
+flowchart TB
+    B["🌐 Browser<br/>server-rendered HTML"] --> CF["Cloudflare<br/>proxied, SSL Full (strict)"]
+
+    subgraph VM["☁️ Azure VM · B2ats_v2 · 2 vCPU, 1 GiB RAM"]
+        NG["Nginx 1.24<br/>Let's Encrypt cert"] --> API["FastAPI + Jinja2<br/>uvicorn, Docker"]
+        API -- "audit row,<br/>result as JSONB" --> DB[("PostgreSQL 16<br/>Docker volume")]
+        API -- "background task" --> CR["Async crawler<br/>asyncio + httpx"]
+    end
+
+    CF --> NG
     CR -- "robots.txt, sitemap,<br/>pages, link checks" --> T["Target website"]
     CR -. "optional" .-> PSI["PageSpeed Insights API"]
 
-    style CF fill:#f38020,stroke:#f38020,color:#ffffff
-    style API fill:#1e3a6e,stroke:#1e3a6e,color:#ffffff
-    style DB fill:#336791,stroke:#336791,color:#ffffff
+    classDef client fill:#334155,stroke:#1e293b,color:#ffffff
+    classDef edge fill:#f38020,stroke:#c2410c,color:#ffffff
+    classDef proxy fill:#009639,stroke:#065f46,color:#ffffff
+    classDef app fill:#05998b,stroke:#0f766e,color:#ffffff
+    classDef data fill:#336791,stroke:#1e3a5f,color:#ffffff
+    classDef worker fill:#7c3aed,stroke:#5b21b6,color:#ffffff
+    classDef ext fill:#64748b,stroke:#475569,color:#ffffff
+    classDef optional fill:#64748b,stroke:#475569,color:#ffffff,stroke-dasharray:5 5
+
+    class B client
+    class CF edge
+    class NG proxy
+    class API app
+    class DB data
+    class CR worker
+    class T ext
+    class PSI optional
+
+    style VM fill:#0078d41a,stroke:#0078d4,stroke-width:2px,stroke-dasharray:6 4,color:#0078d4
 ```
 
 One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two containers. No Redis, no queue, no worker: an audit is a FastAPI background task, at most three run at once behind an `asyncio.Semaphore`, and the finished result is one JSONB column. No JavaScript framework either — every page, including the report, is server-rendered, because a tool that lectures people about JavaScript SEO should be readable by a crawler that runs none.
