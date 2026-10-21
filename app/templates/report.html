@@ -23,6 +23,25 @@
   <div class="stat note"><span class="num">{{ r.counts.Notice }}</span><span class="lbl">Notices</span></div>
 </section>
 <p class="meta">Finished {{ r.finished_at[:16]|replace("T", " ") }} UTC · {{ r.sitemap_urls }} URLs in sitemap · {{ r.robots_blocked|length }} blocked by robots.txt</p>
+<div class="actions">
+  <a class="act" href="/report/{{ row.id }}/pdf">Download PDF</a>
+  <a class="act" href="/api/audits/{{ row.id }}">Download JSON</a>
+  <form method="post" action="/start"><input type="hidden" name="url" value="{{ row.url }}"><button class="act" type="submit">Run this audit again</button></form>
+</div>
+
+{% if cmp %}
+<section class="compare">
+  <h2>Since the last audit</h2>
+  <p>Compared with the <a href="/report/{{ prev.id }}/">audit from {{ prev.created_at.strftime("%Y-%m-%d %H:%M") if prev.created_at.strftime is defined else prev.created_at }} UTC</a>:
+    health score {{ cmp.health_before }} → {{ cmp.health_after }}
+    <strong class="{{ 'up' if cmp.health_delta > 0 else ('down' if cmp.health_delta < 0 else '') }}">({{ "%+d"|format(cmp.health_delta) }})</strong>,
+    pages crawled {{ cmp.pages_before }} → {{ cmp.pages_after }}.</p>
+  {% if not cmp.fixed and not cmp.new and not cmp.changed %}<p>The same issues on the same number of pages.</p>{% endif %}
+  {% if cmp.fixed %}<h3>Fixed</h3><ul>{% for i in cmp.fixed %}<li class="up">{{ i.title }} <span class="d">(was on {{ i.pages }} page{{ "" if i.pages == 1 else "s" }})</span></li>{% endfor %}</ul>{% endif %}
+  {% if cmp.new %}<h3>New</h3><ul>{% for i in cmp.new %}<li class="down">{{ i.title }} <span class="d">({{ i.pages }} page{{ "" if i.pages == 1 else "s" }})</span></li>{% endfor %}</ul>{% endif %}
+  {% if cmp.changed %}<h3>Changed</h3><ul>{% for i in cmp.changed %}<li class="{{ 'up' if i.delta < 0 else 'down' }}">{{ i.title }} <span class="d">{{ i.before }} → {{ i.after }} pages</span></li>{% endfor %}</ul>{% endif %}
+</section>
+{% endif %}
 
 <section>
   <h2>Issues by priority</h2>
@@ -76,6 +95,6 @@
   </table>
   </div>
 </section>
-<p class="meta"><a href="/api/audits/{{ row.id }}">Download JSON</a> · <a href="/">Run another audit</a></p>
+<p class="meta"><a href="/report/{{ row.id }}/pdf">Download PDF</a> · <a href="/api/audits/{{ row.id }}">Download JSON</a> · <a href="/">Run another audit</a></p>
 {% endif %}
 {% endblock %}
