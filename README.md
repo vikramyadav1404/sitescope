@@ -68,7 +68,7 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Duplicate and near-duplicate pages | Implemented — SimHash on 3-word shingles, Hamming distance ≤ 3 |
 | Priority score and health score | Implemented |
 | SSRF guard | Implemented, including the DNS-rebinding fix — see below |
-| Core Web Vitals (LCP, INP, CLS) | Implemented, but the live server has no PageSpeed API key, so Google answers 429 and the report says so |
+| Core Web Vitals (LCP, INP, CLS) | Implemented — PageSpeed Insights API, real-user (CrUX) data when Google has it, lab data otherwise |
 | JavaScript rendering diff | Implemented, optional — off in production; Playwright is not in the image |
 | Pages per audit | Capped at 300, depth 6 |
 | PDF report | Implemented — `/report/{id}/pdf` |
@@ -76,7 +76,7 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Per-IP limit on starting audits | Implemented — 10 per hour by default, stored in Postgres, `CF-Connecting-IP` trusted only from Cloudflare's IP ranges |
 | Restart recovery | Implemented — audits left queued or running are marked failed on startup |
 | Accounts | Implemented — optional; email + scrypt password hash, 30-day session cookie, email confirmation, account deletion |
-| Scheduled re-audits | Implemented — up to 5 monitored sites per account, daily or weekly; email when the health score drops by 5+ points (needs SMTP settings) |
+| Scheduled re-audits | Implemented — up to 5 monitored sites per account, daily or weekly; email when the health score drops by 5+ points, sent through Brevo SMTP |
 
 ## Decisions and problems
 
@@ -106,15 +106,12 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 
 ## What's still open
 
-- **Core Web Vitals are empty on the live site** until a PageSpeed Insights API key is set in `.env` on the VM.
-- **Ports 80 and 443 stay open to everyone until `deploy/cloudflare-ufw.sh` is run on the VM.** The per-IP limit no longer depends on this (see above), but the firewall rule hides the origin from direct hits.
 - **External link checks stop at 200 links per audit.**
+- **Alert emails are sent from a Gmail address** through Brevo, so some may land in spam.
 
 ## What I would do next
 
-1. **Set the PageSpeed key**, so Core Web Vitals show up in every report.
-2. **Run `deploy/cloudflare-ufw.sh` on the VM**, so ports 80 and 443 accept only Cloudflare's IP ranges.
-3. **Set the SMTP settings** (`SMTP_HOST`, `MAIL_FROM`, …), so sign-ups get a confirmation email and monitored sites send score-drop alerts.
+1. **Send alerts from the site's own domain** (for example `alerts@vikramyadav.me`) by verifying `vikramyadav.me` in Brevo with DKIM and DMARC records in Cloudflare.
 
 ## Local setup
 
