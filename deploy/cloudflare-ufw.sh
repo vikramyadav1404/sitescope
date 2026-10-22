@@ -35,7 +35,7 @@ ufw allow OpenSSH >/dev/null
 # Remove old Cloudflare rules and the open-to-all 80/443 rules (highest number first).
 delete_matching() {
   ufw status numbered \
-    | grep -E "$1" \
+    | { grep -E "$1" || true; } \
     | sed -E 's/^\[ *([0-9]+)\].*/\1/' \
     | sort -rn \
     | while read -r n; do ufw --force delete "$n" >/dev/null; done
