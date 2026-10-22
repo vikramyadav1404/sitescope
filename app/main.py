@@ -14,17 +14,19 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel
 
-from . import config
+from . import config, mailer
+from . import accounts as acc
 from .audit import run_audit
 from .compare import compare
 from .crawler import normalise
 from .pdf import build_pdf
-from .ratelimit import RateLimiter, client_ip
+from .ratelimit import client_ip, make_limiter
 from .safety import BlockedTarget, check_url
 from .store import make_store
 
 log = logging.getLogger("sitescope")
 store = make_store()
+accounts = acc.make_accounts()
 BASE = Path(__file__).parent
 
 
@@ -39,12 +41,20 @@ async def lifespan(_app):
             await asyncio.sleep(2)
     else:
         store.init()
+    for part in (limiter, auth_limiter, accounts):
+        try:
+            part.init()
+        except Exception as exc:
+            log.warning("%s init failed (%s)", type(part).__name__, exc)
     # Audits run as background tasks inside this process, so any that were queued or
     # running when the process stopped will never finish. Mark them failed.
     stale = store.fail_unfinished()
     if stale:
         log.warning("marked %d unfinished audits as failed after restart", stale)
+    task = asyncio.create_task(_scheduler()) if config.SCHEDULER_INTERVAL_S > 0 else None
     yield
+    if task:
+        task.cancel()
 
 
 class HeadAsGet:
@@ -79,7 +89,8 @@ templates.env.globals["inline_css"] = Markup((BASE / "static" / "style.css").rea
 templates.env.globals["gsc_verification"] = config.GSC_VERIFICATION
 MAX_RUNNING = 3
 _running = asyncio.Semaphore(MAX_RUNNING)
-limiter = RateLimiter(config.AUDITS_PER_IP_PER_HOUR)
+limiter = make_limiter()  # Postgres when DATABASE_URL is set, so restarts don't reset it
+auth_limiter = make_limiter(config.AUTH_ATTEMPTS_PER_IP_PER_HOUR)  # sign-ups and failed logins
 
 
 def _limit_message(wait_s: int) -> str:
@@ -252,6 +263,7 @@ async def robots():
         "User-agent: *\n"
         "Disallow: /report/\n"
         "Disallow: /api/\n"
+        "Disallow: /account/\n"
         f"Sitemap: {config.SITE_URL}/sitemap.xml\n"
     )
 
@@ -261,3 +273,229 @@ async def sitemap():
     urls = "".join(f"<url><loc>{config.SITE_URL}{p}</loc></url>" for p in PAGES)
     xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'
     return Response(xml, media_type="application/xml")
+
+
+# --- accounts -------------------------------------------------------------------
+# Audits stay free without an account. An account only adds monitored sites: each one
+# is re-audited daily or weekly, and the owner gets an email when the health score drops.
+
+SESSION_COOKIE = "ss_session"
+# Each scrypt hash uses ~16 MB; cap parallel hashing so a burst of log-ins can't
+# exhaust the 1 GiB VM.
+_hash_slots = asyncio.Semaphore(2)
+
+
+async def _scrypt(fn, *args):
+    async with _hash_slots:
+        return await asyncio.to_thread(fn, *args)
+
+
+def current_user(request: Request) -> dict | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    return accounts.session_user(acc.token_hash(token)) if token else None
+
+
+def _same_origin(request: Request) -> bool:
+    """Reject cross-site form posts. The SameSite=Lax cookie already blocks most;
+    this also covers browsers that send an Origin header but not SameSite."""
+    origin = request.headers.get("origin")
+    if not origin or origin == "null":
+        return origin is None
+    return origin.split("://", 1)[-1].rstrip("/") == request.headers.get("host", "")
+
+
+def _back(path: str, **params) -> RedirectResponse:
+    q = urlencode({k: v for k, v in params.items() if v})
+    return RedirectResponse(f"{path}?{q}" if q else path, status_code=303)
+
+
+def _start_session(user_id: str, to: str, **params) -> RedirectResponse:
+    token, th = acc.new_token()
+    accounts.create_session(user_id, th)
+    res = _back(to, **params)
+    res.set_cookie(SESSION_COOKIE, token, max_age=acc.SESSION_DAYS * 86400, httponly=True,
+                   secure=config.COOKIE_SECURE, samesite="lax", path="/")
+    return res
+
+
+def _account_page(request: Request, template: str, title: str, **ctx) -> HTMLResponse:
+    return templates.TemplateResponse(request, template, {
+        "title": f"{title} | SiteScope", "description": "Your SiteScope account.",
+        "canonical": f"{config.SITE_URL}/account/", "path": "/account/", "noindex": True,
+        "error": request.query_params.get("error"), "msg": request.query_params.get("msg"), **ctx,
+    })
+
+
+async def _send_verification(email: str, token: str) -> bool:
+    link = f"{config.SITE_URL}/account/verify/?{urlencode({'token': token})}"
+    return await mailer.send(email, "Confirm your SiteScope email",
+                             f"Open this link to confirm your email and turn on score alerts:\n\n{link}\n\n"
+                             "If you did not sign up for SiteScope, ignore this email.")
+
+
+@app.get("/account/login/", response_class=HTMLResponse, include_in_schema=False)
+async def account_login_page(request: Request):
+    if current_user(request):
+        return _back("/account/")
+    return _account_page(request, "account_login.html", "Log in or sign up")
+
+
+@app.post("/account/signup", include_in_schema=False)
+async def account_signup(request: Request, email: str = Form(...), password: str = Form(...)):
+    if not _same_origin(request):
+        raise HTTPException(403, "Cross-site request refused")
+    email = acc.normalise_email(email)
+    if not acc.valid_email(email):
+        return _back("/account/login/", error="Please enter a valid email address.")
+    if not 8 <= len(password) <= 200:
+        return _back("/account/login/", error="Use a password of at least 8 characters.")
+    if auth_limiter.retry_after(client_ip(request)):
+        return _back("/account/login/", error="Too many attempts from your network. Try again later.")
+    token, th = acc.new_token()
+    pw_hash = await _scrypt(acc.hash_password, password)
+    user_id = accounts.create_user(email, pw_hash, th)
+    if not user_id:
+        return _back("/account/login/", error="That email already has an account. Log in instead.")
+    sent = await _send_verification(email, token)
+    msg = ("Account created. Check your email for a link to turn on score alerts." if sent
+           else "Account created. Email alerts are switched off on this server for now.")
+    return _start_session(user_id, "/account/", msg=msg)
+
+
+@app.post("/account/login", include_in_schema=False)
+async def account_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    if not _same_origin(request):
+        raise HTTPException(403, "Cross-site request refused")
+    # Every attempt counts, so a blocked IP can't keep guessing until one succeeds.
+    if auth_limiter.retry_after(client_ip(request)):
+        return _back("/account/login/", error="Too many attempts from your network. Try again later.")
+    user = accounts.user_by_email(acc.normalise_email(email))
+    ok = await _scrypt(acc.check_password, password[:200],
+                                 user["pw_hash"] if user else acc._DUMMY_HASH)
+    if not (user and ok):
+        return _back("/account/login/", error="Wrong email or password.")
+    return _start_session(user["id"], "/account/")
+
+
+@app.post("/account/logout", include_in_schema=False)
+async def account_logout(request: Request):
+    if not _same_origin(request):
+        raise HTTPException(403, "Cross-site request refused")
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        accounts.delete_session(acc.token_hash(token))
+    res = _back("/")
+    res.delete_cookie(SESSION_COOKIE, path="/")
+    return res
+
+
+@app.get("/account/verify/", include_in_schema=False)
+async def account_verify(token: str = ""):
+    ok = bool(token) and accounts.verify(acc.token_hash(token))
+    return _back("/account/", msg="Email confirmed. Score alerts are on." if ok else None,
+                 error=None if ok else "That confirmation link is not valid any more.")
+
+
+@app.get("/account/", response_class=HTMLResponse, include_in_schema=False)
+async def account_home(request: Request):
+    user = current_user(request)
+    if not user:
+        return _back("/account/login/")
+    return _account_page(request, "account.html", "Your monitored sites", user=user,
+                         monitors=accounts.monitors_for(user["id"]), mail_on=mailer.enabled(),
+                         max_monitors=config.MAX_MONITORS_PER_USER, drop=config.ALERT_DROP_POINTS)
+
+
+@app.post("/account/sites", include_in_schema=False)
+async def account_add_site(request: Request, url: str = Form(...), frequency: str = Form("weekly")):
+    user = current_user(request)
+    if not user or not _same_origin(request):
+        return _back("/account/login/")
+    if frequency not in acc.FREQUENCIES:
+        frequency = "weekly"
+    if len(accounts.monitors_for(user["id"])) >= config.MAX_MONITORS_PER_USER:
+        return _back("/account/", error=f"You can monitor up to {config.MAX_MONITORS_PER_USER} sites.")
+    try:
+        target = _validate(url)
+    except ValueError as exc:
+        return _back("/account/", error=str(exc))
+    if not accounts.add_monitor(user["id"], target, frequency):
+        return _back("/account/", error="You already monitor that site.")
+    return _back("/account/", msg="Site added. The first audit starts within a minute.")
+
+
+@app.post("/account/sites/{mid}/run", include_in_schema=False)
+async def account_run_site(request: Request, mid: str):
+    user = current_user(request)
+    if not user or not _same_origin(request):
+        return _back("/account/login/")
+    wait = limiter.retry_after(client_ip(request))  # counts like any other audit
+    if wait:
+        return _back("/account/", error=_limit_message(wait))
+    accounts.run_now(user["id"], mid)
+    return _back("/account/", msg="Queued. The audit starts within a minute.")
+
+
+@app.post("/account/sites/{mid}/delete", include_in_schema=False)
+async def account_delete_site(request: Request, mid: str):
+    user = current_user(request)
+    if not user or not _same_origin(request):
+        return _back("/account/login/")
+    accounts.delete_monitor(user["id"], mid)
+    return _back("/account/", msg="Site removed.")
+
+
+@app.post("/account/delete", include_in_schema=False)
+async def account_delete(request: Request, password: str = Form(...)):
+    user = current_user(request)
+    if not user or not _same_origin(request):
+        return _back("/account/login/")
+    if not await _scrypt(acc.check_password, password[:200], user["pw_hash"]):
+        return _back("/account/", error="Wrong password. The account was not deleted.")
+    accounts.delete_user(user["id"])
+    res = _back("/")
+    res.delete_cookie(SESSION_COOKIE, path="/")
+    return res
+
+
+# --- scheduled re-audits --------------------------------------------------------
+
+async def _run_monitor(m: dict) -> None:
+    try:
+        target = _validate(m["url"])  # re-check: DNS may now point somewhere private
+    except ValueError as exc:
+        log.warning("monitor %s skipped: %s", m["id"], exc)
+        return
+    audit_id = store.create(target)
+    await _job(audit_id, target, None)
+    row = store.get(audit_id) or {}
+    result = row.get("result") if row.get("status") == "done" else None
+    score = result.get("health_score") if result else None
+    accounts.set_result(m["id"], audit_id, score)
+    prev = m.get("last_score")
+    if score is None or prev is None or prev - score < config.ALERT_DROP_POINTS or not m.get("verified"):
+        return
+    await mailer.send(
+        m["email"], f"SiteScope: health score for {target} fell from {prev} to {score}",
+        f"The scheduled audit of {target} finished with a health score of {score}, down from {prev}.\n\n"
+        f"Report (with what is new since the last audit): {config.SITE_URL}/report/{audit_id}/\n\n"
+        f"Manage your monitored sites: {config.SITE_URL}/account/")
+
+
+async def run_due_monitors() -> int:
+    """Run every monitored site that is due. Returns how many were started."""
+    due = accounts.claim_due(limit=MAX_RUNNING)
+    for m in due:
+        await _run_monitor(m)
+    return len(due)
+
+
+async def _scheduler() -> None:
+    while True:
+        try:
+            await run_due_monitors()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("scheduler pass failed")
+        await asyncio.sleep(config.SCHEDULER_INTERVAL_S)

@@ -24,3 +24,17 @@ AUDITS_PER_IP_PER_HOUR = _int("AUDITS_PER_IP_PER_HOUR", 10)  # 0 = no limit
 USER_AGENT = os.getenv(
     "USER_AGENT", "SiteScopeBot/1.0 (+https://vikramyadav.me/about/)"
 )
+
+# Accounts and scheduled re-audits
+COOKIE_SECURE = SITE_URL.startswith("https://")  # session cookie only over HTTPS in production
+MAX_MONITORS_PER_USER = _int("MAX_MONITORS_PER_USER", 5)
+ALERT_DROP_POINTS = _int("ALERT_DROP_POINTS", 5)     # email when the health score falls this much
+SCHEDULER_INTERVAL_S = _int("SCHEDULER_INTERVAL_S", 60)  # how often to look for due re-audits; 0 = off
+AUTH_ATTEMPTS_PER_IP_PER_HOUR = _int("AUTH_ATTEMPTS_PER_IP_PER_HOUR", 20)
+
+# Outgoing email (verification links and score-drop alerts). Empty SMTP_HOST = no email.
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = _int("SMTP_PORT", 587)
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+MAIL_FROM = os.getenv("MAIL_FROM", "").strip()  # e.g. SiteScope <alerts@vikramyadav.me>
