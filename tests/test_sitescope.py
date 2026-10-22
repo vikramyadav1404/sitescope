@@ -1,5 +1,6 @@
 """Tests run against a fake website served by httpx.MockTransport (no network)."""
 import asyncio
+import os
 
 import httpx
 import pytest
@@ -233,6 +234,30 @@ def test_rate_limiter_window():
     assert rl.retry_after("ip") == 0
 
 
+CF_EDGE = "172.70.1.1"  # inside Cloudflare's 172.64.0.0/13
+
+
+def test_client_ip_ignores_forged_cloudflare_header():
+    from starlette.requests import Request
+    from app.ratelimit import client_ip
+
+    def req(peer, **headers):
+        raw = [(k.replace("_", "-").lower().encode(), v.encode()) for k, v in headers.items()]
+        return Request({"type": "http", "headers": raw, "client": (peer, 1)})
+
+    # Through Cloudflare: the visitor IP comes from CF-Connecting-IP.
+    assert client_ip(req("127.0.0.1", x_real_ip=CF_EDGE, cf_connecting_ip="203.0.113.7")) == "203.0.113.7"
+    # Direct hit on the VM IP with a forged header: keyed by the real edge address.
+    assert client_ip(req("127.0.0.1", x_real_ip="8.8.4.4", cf_connecting_ip="1.2.3.4")) == "8.8.4.4"
+    # uvicorn --proxy-headers sets request.client from X-Forwarded-For, which the visitor
+    # controls; a Cloudflare address there must not unlock CF-Connecting-IP.
+    assert client_ip(req(CF_EDGE, x_real_ip="8.8.4.4", cf_connecting_ip="1.2.3.4")) == "8.8.4.4"
+    # Without Nginx (local runs) the direct peer is used.
+    assert client_ip(req("8.8.4.4")) == "8.8.4.4"
+    # Garbage in the header falls back to the edge.
+    assert client_ip(req("127.0.0.1", x_real_ip=CF_EDGE, cf_connecting_ip="not-an-ip")) == CF_EDGE
+
+
 def test_api_rate_limit_per_ip(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
@@ -244,15 +269,44 @@ def test_api_rate_limit_per_ip(monkeypatch):
     monkeypatch.setattr(main, "_job", no_job)
     monkeypatch.setattr(main, "limiter", RateLimiter(2))
     tc = TestClient(main.app)
-    hdr = {"CF-Connecting-IP": "203.0.113.7"}
+    hdr = {"X-Real-IP": CF_EDGE, "CF-Connecting-IP": "203.0.113.7"}
     assert tc.post("/api/audits", json={"url": "example.com"}, headers=hdr).status_code == 202
     assert tc.post("/api/audits", json={"url": "example.com"}, headers=hdr).status_code == 202
     res = tc.post("/api/audits", json={"url": "example.com"}, headers=hdr)
     assert res.status_code == 429 and int(res.headers["retry-after"]) > 0
     assert tc.post("/api/audits", json={"url": "example.com"},
-                   headers={"CF-Connecting-IP": "203.0.113.8"}).status_code == 202
+                   headers={"X-Real-IP": CF_EDGE, "CF-Connecting-IP": "203.0.113.8"}).status_code == 202
     form = tc.post("/start", data={"url": "example.com", "back": "/"}, headers=hdr, follow_redirects=False)
     assert form.status_code == 303 and "Too+many+audits" in form.headers["location"]
+    # Forging a fresh CF-Connecting-IP without coming through Cloudflare doesn't reset the limit.
+    direct = {"X-Real-IP": "8.8.4.4"}
+    for fake in ("10.0.0.1", "10.0.0.2"):
+        assert tc.post("/api/audits", json={"url": "example.com"},
+                       headers={**direct, "CF-Connecting-IP": fake}).status_code == 202
+    assert tc.post("/api/audits", json={"url": "example.com"},
+                   headers={**direct, "CF-Connecting-IP": "10.0.0.3"}).status_code == 429
+
+
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="set TEST_DATABASE_URL to test against Postgres")
+def test_postgres_rate_limiter_survives_restart():
+    import psycopg
+    from app.ratelimit import PostgresRateLimiter
+
+    dsn = os.environ["TEST_DATABASE_URL"]
+    rl = PostgresRateLimiter(dsn, limit=2, window_s=3600)
+    rl.init()
+    with psycopg.connect(dsn, autocommit=True) as c:
+        c.execute("DELETE FROM rate_hits WHERE key LIKE 'test-%'")
+    assert rl.retry_after("test-ip") == 0 and rl.retry_after("test-ip") == 0
+    # A new limiter object stands in for a restarted app: the count is still there.
+    rl2 = PostgresRateLimiter(dsn, limit=2, window_s=3600)
+    wait = rl2.retry_after("test-ip")
+    assert 3500 < wait <= 3601
+    assert rl2.retry_after("test-other") == 0
+    # Hits older than the window stop counting.
+    with psycopg.connect(dsn, autocommit=True) as c:
+        c.execute("UPDATE rate_hits SET at = now() - interval '2 hours' WHERE key='test-ip'")
+    assert rl2.retry_after("test-ip") == 0
 
 
 def test_compare_pdf_and_report(monkeypatch):
@@ -294,3 +348,121 @@ def test_compare_pdf_and_report(monkeypatch):
     running = main.store.create("https://example.com/")
     assert tc.get(f"/report/{running}/pdf").status_code == 409
     assert tc.get("/report/nope/pdf").status_code == 404
+
+
+def test_password_hash_roundtrip():
+    from app import accounts as acc
+    h = acc.hash_password("correct horse")
+    assert h.startswith("scrypt$") and "correct horse" not in h
+    assert acc.check_password("correct horse", h)
+    assert not acc.check_password("wrong", h)
+    assert not acc.check_password("x", "garbage")
+
+
+def _fresh_accounts(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import accounts as acc, config, main, mailer
+    from app.ratelimit import RateLimiter
+    from app.store import MemoryStore
+
+    sent = []
+
+    async def fake_send(to, subject, body):
+        sent.append((to, subject, body))
+        return True
+    monkeypatch.setattr(config, "COOKIE_SECURE", False)
+    monkeypatch.setattr(mailer, "enabled", lambda: True)
+    monkeypatch.setattr(mailer, "send", fake_send)
+    monkeypatch.setattr(main, "accounts", acc.MemoryAccounts())
+    monkeypatch.setattr(main, "store", MemoryStore())
+    monkeypatch.setattr(main, "limiter", RateLimiter(100))
+    monkeypatch.setattr(main, "auth_limiter", RateLimiter(100))
+    monkeypatch.setattr(main, "_validate", lambda url: "https://example.com/")
+    return TestClient(main.app), main, sent
+
+
+def test_signup_verify_monitor_and_score_drop_alert(monkeypatch):
+    import re
+    tc, main, sent = _fresh_accounts(monkeypatch)
+
+    assert tc.get("/account/", follow_redirects=False).headers["location"] == "/account/login/"
+    r = tc.post("/account/signup", data={"email": "Me@Example.com ", "password": "longenough"},
+                follow_redirects=False)
+    assert r.status_code == 303 and "ss_session" in r.cookies
+    token = re.search(r"token=([\w-]+)", sent[0][2]).group(1)
+    assert sent[0][0] == "me@example.com"
+    assert "Email+confirmed" in tc.get(f"/account/verify/?token={token}", follow_redirects=False).headers["location"]
+    assert "not+valid" in tc.get(f"/account/verify/?token={token}", follow_redirects=False).headers["location"]
+    assert main.accounts.user_by_email("me@example.com")["verified"]
+
+    # duplicate sign-up and bad login are refused
+    assert "already" in tc.post("/account/signup", data={"email": "me@example.com", "password": "longenough"},
+                                follow_redirects=False).headers["location"]
+    assert "Wrong" in tc.post("/account/login", data={"email": "me@example.com", "password": "nope-nope"},
+                              follow_redirects=False).headers["location"]
+
+    # cross-site form posts are refused
+    assert tc.post("/account/sites", data={"url": "example.com"}, headers={"Origin": "https://evil.test"},
+                   follow_redirects=False).headers["location"] == "/account/login/"
+
+    assert "Site+added" in tc.post("/account/sites", data={"url": "example.com", "frequency": "daily"},
+                                   follow_redirects=False).headers["location"]
+    page = tc.get("/account/").text
+    assert "https://example.com/" in page and "Daily" in page
+
+    scores = iter([90, 80])
+
+    async def fake_job(audit_id, url, max_pages):
+        main.store.update(audit_id, "done", result={"health_score": next(scores)})
+    monkeypatch.setattr(main, "_job", fake_job)
+
+    async def run():
+        return await main.run_due_monitors()
+    import asyncio
+    assert asyncio.run(run()) == 1          # first audit: score 90, nothing to compare
+    assert asyncio.run(run()) == 0          # not due again until tomorrow
+    m = main.accounts.monitors_for(main.accounts.user_by_email("me@example.com")["id"])[0]
+    assert m["last_score"] == 90
+    tc.post("/account/sites/%s/run" % m["id"], follow_redirects=False)
+    assert asyncio.run(run()) == 1          # score 80: a 10-point drop
+    alert = sent[-1]
+    assert alert[0] == "me@example.com" and "fell from 90 to 80" in alert[1] and "/report/" in alert[2]
+
+
+def test_logout_and_delete_account(monkeypatch):
+    tc, main, _ = _fresh_accounts(monkeypatch)
+    tc.post("/account/signup", data={"email": "a@b.co", "password": "longenough"})
+    tc.post("/account/sites", data={"url": "example.com"})
+    assert "Wrong+password" in tc.post("/account/delete", data={"password": "bad-pass"},
+                                       follow_redirects=False).headers["location"]
+    tc.post("/account/delete", data={"password": "longenough"})
+    assert main.accounts.user_by_email("a@b.co") is None and not main.accounts.monitors
+    tc.post("/account/signup", data={"email": "c@d.co", "password": "longenough"})
+    tc.post("/account/logout")
+    assert tc.get("/account/", follow_redirects=False).headers["location"] == "/account/login/"
+    assert "Disallow: /account/" in tc.get("/robots.txt").text
+
+
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="set TEST_DATABASE_URL to test against Postgres")
+def test_postgres_accounts():
+    import psycopg
+    from app import accounts as acc
+    dsn = os.environ["TEST_DATABASE_URL"]
+    with psycopg.connect(dsn, autocommit=True) as c:
+        c.execute("DROP TABLE IF EXISTS monitors, sessions, users")
+    a = acc.PostgresAccounts(dsn)
+    a.init()
+    uid = a.create_user("pg@example.com", acc.hash_password("pw123456"), acc.token_hash("tok"))
+    assert uid and a.create_user("pg@example.com", "x", None) is None
+    assert a.verify(acc.token_hash("tok")) and not a.verify(acc.token_hash("tok"))
+    a.create_session(uid, "th1")
+    assert a.session_user("th1")["email"] == "pg@example.com"
+    mid = a.add_monitor(uid, "https://example.com/", "weekly")
+    assert a.add_monitor(uid, "https://example.com/", "daily") is None
+    due = a.claim_due(5)
+    assert [d["id"] for d in due] == [mid] and due[0]["verified"] and a.claim_due(5) == []
+    a.set_result(mid, "aud1", 77)
+    assert a.monitors_for(uid)[0]["last_score"] == 77
+    assert a.run_now(uid, mid) and a.claim_due(5)[0]["last_score"] == 77
+    a.delete_user(uid)
+    assert a.session_user("th1") is None and a.monitors_for(uid) == []
