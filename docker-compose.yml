@@ -27,6 +27,11 @@ services:
       GA4_ID: ${GA4_ID:-}
       GSC_VERIFICATION: ${GSC_VERIFICATION:-}
       AUDITS_PER_IP_PER_HOUR: ${AUDITS_PER_IP_PER_HOUR:-10}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     ports:
       - "127.0.0.1:8000:8000"   # only Nginx on the same machine can reach it
 

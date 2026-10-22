@@ -53,7 +53,7 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Data | PostgreSQL 16 via psycopg 3; in-memory store when `DATABASE_URL` is unset |
 | Deploy | Docker Compose, Nginx reverse proxy, Certbot, Cloudflare DNS, UFW |
 | Reports | HTML page, JSON download, PDF via fpdf2 |
-| Tests | pytest, 16 tests against a fake site on `httpx.MockTransport`. No network needed. GitHub Actions on every push |
+| Tests | pytest, 22 tests against a fake site on `httpx.MockTransport` (two need Postgres via `TEST_DATABASE_URL`). GitHub Actions on every push, with a Postgres service |
 
 11 public pages (tools, two guides, about and privacy), a report page, a small JSON API, `robots.txt` and `sitemap.xml`. 25 issue types. Optional Google Analytics 4 and Search Console tags, switched on by environment variables.
 
@@ -73,9 +73,10 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Pages per audit | Capped at 300, depth 6 |
 | PDF report | Implemented — `/report/{id}/pdf` |
 | Compare with the previous audit | Implemented — every finished audit is saved; a re-run of the same URL shows what was fixed, what is new and the change in health score |
-| Per-IP limit on starting audits | Implemented — 10 per hour by default |
+| Per-IP limit on starting audits | Implemented — 10 per hour by default, stored in Postgres, `CF-Connecting-IP` trusted only from Cloudflare's IP ranges |
 | Restart recovery | Implemented — audits left queued or running are marked failed on startup |
-| Accounts, scheduled re-audits | Not built |
+| Accounts | Implemented — optional; email + scrypt password hash, 30-day session cookie, email confirmation, account deletion |
+| Scheduled re-audits | Implemented — up to 5 monitored sites per account, daily or weekly; email when the health score drops by 5+ points (needs SMTP settings) |
 
 ## Decisions and problems
 
@@ -97,24 +98,29 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 
 **The planned VM size did not exist.** B1s is not offered to Azure for Students in Central India, and B2ats_v2 is restricted in availability zones 1 and 2. The VM is B2ats_v2 with no zone, plus 1 GB of swap for the 1 GiB of RAM. Server setup is one script (`deploy/azure-setup.sh`) passed as Azure custom data, so the VM can be rebuilt from nothing.
 
+**The per-IP limit had to stop trusting a forgeable header.** Cloudflare sends the visitor IP in `CF-Connecting-IP`, but anyone hitting the VM's IP directly can send that header too and get a fresh limit with every fake value. The app now reads `X-Real-IP`, which Nginx always overwrites with the address that actually connected, and uses `CF-Connecting-IP` only when that address is in Cloudflare's published ranges. Otherwise the connecting address itself is the key. The limit is also kept in a `rate_hits` table in Postgres instead of memory, so a restart no longer resets it and a second app container would share it. A Postgres advisory lock per IP stops two parallel requests from both slipping under the limit.
+
+**Accounts are optional, and audits still need none.** An account only adds monitored sites. Passwords are hashed with scrypt from the Python standard library, so no new dependency. Session and email-confirmation tokens are random and only their SHA-256 is stored, so a copy of the database contains no working session. The cookie is HttpOnly, Secure and SameSite=Lax, and every account form also checks the Origin header. Log-in attempts count against a per-IP limit whether they succeed or not, so a blocked IP can't keep guessing. Alerts go only to confirmed addresses, so nobody can sign up with someone else's email and send them mail.
+
+**The scheduler runs inside the app.** Every minute a background task claims due monitors with `UPDATE … FOR UPDATE SKIP LOCKED`, moves their next run forward in the same statement and runs the audits through the same three crawl slots as everyone else. If a second app container ran, each due site would still be audited once. No cron, Celery or Redis was needed.
+
 ## What's still open
 
 - **Core Web Vitals are empty on the live site** until a PageSpeed Insights API key is set in `.env` on the VM.
-- **The per-IP limit trusts `CF-Connecting-IP`.** That is right for traffic through Cloudflare, but the VM's ports 80 and 443 are open to everyone, so a client that connects to the VM's IP directly can send any value. Restricting the firewall to Cloudflare's IP ranges would close it.
-- **The limit lives in memory** in one app process, so it resets when the app restarts. Fine for one container; a second one would need Postgres or Redis for it.
+- **Ports 80 and 443 stay open to everyone until `deploy/cloudflare-ufw.sh` is run on the VM.** The per-IP limit no longer depends on this (see above), but the firewall rule hides the origin from direct hits.
 - **External link checks stop at 200 links per audit.**
 
 ## What I would do next
 
 1. **Set the PageSpeed key**, so Core Web Vitals show up in every report.
-2. **Allow only Cloudflare's IP ranges on ports 80 and 443** with UFW, which also makes `CF-Connecting-IP` trustworthy.
-3. **Scheduled re-audits** with an email when the health score drops, which needs accounts.
+2. **Run `deploy/cloudflare-ufw.sh` on the VM**, so ports 80 and 443 accept only Cloudflare's IP ranges.
+3. **Set the SMTP settings** (`SMTP_HOST`, `MAIL_FROM`, …), so sign-ups get a confirmation email and monitored sites send score-drop alerts.
 
 ## Local setup
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q                                  # 16 tests, no network needed
+pytest -q                                  # 20 tests, no network needed (+2 with TEST_DATABASE_URL set)
 uvicorn app.main:app --reload              # http://127.0.0.1:8000, in-memory store
 ```
 
@@ -137,7 +143,7 @@ The test suite serves a small fake website through `httpx.MockTransport` — rob
 curl -fsSL https://raw.githubusercontent.com/vikramyadav1404/sitescope/main/deploy/azure-setup.sh | bash
 ```
 
-Then point DNS at the VM (DNS only), run `sudo certbot --nginx -d vikramyadav.me -d www.vikramyadav.me`, switch the records to Proxied and Cloudflare to Full (strict). `deploy/evidence.sh` prints the server facts — OS, Nginx, Docker, Postgres version, firewall, DNS, certificate expiry — without printing any secret.
+Then point DNS at the VM (DNS only), run `sudo certbot --nginx -d vikramyadav.me -d www.vikramyadav.me`, switch the records to Proxied and Cloudflare to Full (strict). Once the proxy is on, run `sudo bash deploy/cloudflare-ufw.sh`: it fetches Cloudflare's current IP ranges, allows 80 and 443 only from them, removes the open-to-all rules and keeps SSH open. It is safe to re-run (for example weekly from cron) and refuses to change anything if the download looks wrong. Run it only after the first certificate is issued, because that check needs Let's Encrypt to reach the VM directly; renewals go through Cloudflare. `deploy/evidence.sh` prints the server facts — OS, Nginx, Docker, Postgres version, firewall, DNS, certificate expiry — without printing any secret.
 
 ## Configuration
 
@@ -153,6 +159,12 @@ Then point DNS at the VM (DNS only), run `sudo certbot --nginx -d vikramyadav.me
 | `GSC_VERIFICATION` | empty | Search Console HTML-tag token, only if not verifying by DNS |
 | `RENDER_JS` | off | `1` enables the Playwright diff (needs Playwright + Chromium) |
 | `AUDITS_PER_IP_PER_HOUR` | `10` | Audits one IP can start per rolling hour; `0` turns the limit off |
+| `AUTH_ATTEMPTS_PER_IP_PER_HOUR` | `20` | Sign-ups and log-in attempts one IP can make per hour |
+| `MAX_MONITORS_PER_USER` | `5` | Monitored sites per account |
+| `ALERT_DROP_POINTS` | `5` | Email when a monitored site's health score falls by at least this much |
+| `SCHEDULER_INTERVAL_S` | `60` | How often the app looks for due re-audits; `0` turns the scheduler off |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | empty / `587` | SMTP server (STARTTLS) for confirmation and alert emails; empty host means no email |
+| `MAIL_FROM` | empty | Sender, e.g. `SiteScope <alerts@vikramyadav.me>` |
 
 ## API
 
