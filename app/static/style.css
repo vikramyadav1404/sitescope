@@ -49,3 +49,14 @@ code{font-size:.92em}
 .act{display:inline-block;padding:.5rem .9rem;border:1px solid var(--accent);border-radius:8px;background:transparent;color:var(--accent);font:inherit;font-size:.9rem;font-weight:600;text-decoration:none;cursor:pointer}
 .act:hover{background:var(--accent);color:#fff}
 .compare .up{color:var(--good)}.compare .down{color:var(--crit)}
+.ok{color:var(--good)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.2rem}
+.stack{display:flex;flex-direction:column;gap:.7rem}.stack h2{margin:.2em 0}
+.stack label{display:flex;flex-direction:column;gap:.25rem;font-weight:600;font-size:.95rem}
+.stack input{padding:.7rem .9rem;font:inherit;font-weight:400;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.btn{padding:.75rem 1rem;font:inherit;font-weight:600;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}.btn:hover{background:var(--accent2)}
+.box select{padding:.8rem;font:inherit;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
+.row-actions{display:flex;flex-wrap:wrap;gap:.4rem}.row-actions form{margin:0}
+.narrow{max-width:420px;margin-top:.8rem}.account-foot{text-align:center}.account-foot details{text-align:left;max-width:420px;margin:1rem auto}
+.act.danger{border-color:var(--crit);color:var(--crit)}.act.danger:hover{background:var(--crit);color:#fff}
+.monitors{min-width:640px}.monitors .urls{white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}.row-actions .act{white-space:nowrap}
