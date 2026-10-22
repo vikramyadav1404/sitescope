@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Your monitored sites</h1>
+  <p class="lead">Each site is re-audited on its schedule. {% if mail_on %}You get an email when the health score drops by {{ drop }} points or more.{% else %}Email alerts are switched off on this server for now.{% endif %}</p>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  {% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+  {% if mail_on and not user.verified %}<p class="hint">Confirm your email with the link we sent to {{ user.email }} to turn on alerts.</p>{% endif %}
+</section>
+
+<section>
+  {% if monitors %}
+  <div class="scroll">
+  <table class="t monitors">
+    <thead><tr><th>Site</th><th>Schedule</th><th>Last score</th><th>Next audit (UTC)</th><th></th></tr></thead>
+    <tbody>
+    {% for m in monitors %}
+      <tr>
+        <td class="urls" title="{{ m.url }}">{{ m.url }}</td>
+        <td>{{ m.frequency|capitalize }}</td>
+        <td>{% if m.last_audit_id %}<a href="/report/{{ m.last_audit_id }}/">{{ m.last_score if m.last_score is not none else "report" }}</a>{% else %}–{% endif %}</td>
+        <td>{{ m.next_run_at.strftime("%d %b %Y %H:%M") }}</td>
+        <td class="row-actions">
+          <form method="post" action="/account/sites/{{ m.id }}/run"><button class="act" type="submit">Run now</button></form>
+          <form method="post" action="/account/sites/{{ m.id }}/delete"><button class="act" type="submit">Remove</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">No sites yet. Add one below.</p>
+  {% endif %}
+</section>
+
+{% if monitors|length < max_monitors %}
+<section>
+  <h2>Add a site</h2>
+  <form class="box" method="post" action="/account/sites">
+    <label for="url" class="sr">Website URL</label>
+    <input id="url" name="url" type="text" inputmode="url" placeholder="example.com" required>
+    <label for="frequency" class="sr">Schedule</label>
+    <select id="frequency" name="frequency"><option value="weekly">Weekly</option><option value="daily">Daily</option></select>
+    <button type="submit">Add</button>
+  </form>
+  <p class="hint">Up to {{ max_monitors }} sites per account.</p>
+</section>
+{% endif %}
+
+<section class="account-foot">
+  <p class="hint">Signed in as {{ user.email }}.</p>
+  <div class="actions">
+    <form method="post" action="/account/logout"><button class="act" type="submit">Log out</button></form>
+  </div>
+  <details>
+    <summary>Delete account</summary>
+    <form class="stack narrow" method="post" action="/account/delete">
+      <p class="hint">This removes your email, password hash and monitored sites. Audit reports already created stay available by their links.</p>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="act danger" type="submit">Delete my account</button>
+    </form>
+  </details>
+</section>
+{% endblock %}

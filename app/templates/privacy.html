@@ -2,11 +2,12 @@
 {% block content %}
 <section class="hero">
   <h1>Privacy policy</h1>
-  <p class="lead">What SiteScope stores, which services it uses, and how to have an audit removed. Last updated 19 October 2026.</p>
+  <p class="lead">What SiteScope stores, which services it uses, and how to have an audit removed. Last updated 22 October 2026.</p>
 </section>
 <section>
   <h2>What SiteScope stores</h2>
-  <p>When you run an audit, SiteScope stores the website address you entered and the audit result, so that the report link keeps working. The result contains only public information from that website: page addresses, titles, status codes and the issues found. SiteScope has no accounts and does not ask for your name or email address.</p>
+  <p>When you run an audit, SiteScope stores the website address you entered and the audit result, so that the report link keeps working. The result contains only public information from that website: page addresses, titles, status codes and the issues found. Running an audit needs no account, and SiteScope does not ask for your name.</p>
+  <p>Accounts are optional and only used to monitor sites. If you create one, SiteScope stores your email address, a scrypt hash of your password (never the password itself), a session cookie that keeps you logged in for up to 30 days, and the sites you monitor with their schedules. Your email is used only to confirm the address and to send alerts when a monitored site's health score drops. Emails are sent through an SMTP email provider. You can delete your account from the account page; that removes your email, password hash, sessions and monitored sites.</p>
 
   <h2>Analytics</h2>
   {% if ga4_id %}

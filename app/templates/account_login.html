@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Monitor your sites</h1>
+  <p class="lead">Audits are free and need no account. Sign up only if you want SiteScope to re-audit your sites daily or weekly and email you when the health score drops.</p>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  {% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+</section>
+<section class="two">
+  <form class="card stack" method="post" action="/account/login">
+    <h2>Log in</h2>
+    <label>Email <input name="email" type="email" autocomplete="email" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn" type="submit">Log in</button>
+  </form>
+  <form class="card stack" method="post" action="/account/signup">
+    <h2>Sign up</h2>
+    <label>Email <input name="email" type="email" autocomplete="email" required></label>
+    <label>Password <input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button class="btn" type="submit">Create account</button>
+    <p class="hint">We store your email and a hashed password. See the <a href="/privacy/">privacy policy</a>.</p>
+  </form>
+</section>
+{% endblock %}
