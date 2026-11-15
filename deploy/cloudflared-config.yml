@@ -1,0 +1,14 @@
+# /etc/cloudflared/config.yml on the VM. Replace <TUNNEL_ID> with the id that
+# `cloudflared tunnel create sitescope` prints. The credentials file it names is
+# a secret: it stays on the VM and is never committed.
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+# Everything goes to Nginx on this VM. TLS to localhost is not verified: the hop
+# never leaves the machine, and an expired origin certificate must not take the
+# site down. Visitors see Cloudflare's certificate.
+ingress:
+  - service: https://localhost:443
+    originRequest:
+      originServerName: vikramyadav.me
+      noTLSVerify: true

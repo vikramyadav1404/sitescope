@@ -8,15 +8,16 @@ A free technical SEO audit tool that crawls a whole website instead of one URL, 
 
 ```mermaid
 flowchart TB
-    B["🌐 Browser<br/>server-rendered HTML"] --> CF["Cloudflare<br/>proxied, SSL Full (strict)"]
+    B["🌐 Browser<br/>server-rendered HTML"] --> CF["Cloudflare<br/>proxied, TLS at the edge"]
 
-    subgraph VM["☁️ Azure VM · B2ats_v2 · 2 vCPU, 1 GiB RAM"]
-        NG["Nginx 1.24<br/>Let's Encrypt cert"] --> API["FastAPI + Jinja2<br/>uvicorn, Docker"]
+    subgraph VM["☁️ Azure VM · B2pts_v2 Arm64 · 2 vCPU, 1 GiB RAM · no public IP"]
+        CFD["cloudflared<br/>outbound-only tunnel"] --> NG["Nginx 1.24<br/>reverse proxy"]
+        NG --> API["FastAPI + Jinja2<br/>uvicorn, Docker"]
         API -- "audit row,<br/>result as JSONB" --> DB[("PostgreSQL 16<br/>Docker volume")]
         API -- "background task" --> CR["Async crawler<br/>asyncio + httpx"]
     end
 
-    CF --> NG
+    CF --> CFD
     CR -- "robots.txt, sitemap,<br/>pages, link checks" --> T["Target website"]
     CR -. "optional" .-> PSI["PageSpeed Insights API"]
 
@@ -30,7 +31,7 @@ flowchart TB
     classDef optional fill:#64748b,stroke:#475569,color:#ffffff,stroke-dasharray:5 5
 
     class B client
-    class CF edge
+    class CF,CFD edge
     class NG proxy
     class API app
     class DB data
@@ -41,7 +42,7 @@ flowchart TB
     style VM fill:#0078d41a,stroke:#0078d4,stroke-width:2px,stroke-dasharray:6 4,color:#0078d4
 ```
 
-One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two containers. No Redis, no queue, no worker: an audit is a FastAPI background task, at most three run at once behind an `asyncio.Semaphore`, and the finished result is one JSONB column. No JavaScript framework either — every page, including the report, is server-rendered, because a tool that lectures people about JavaScript SEO should be readable by a crawler that runs none.
+One Azure VM (`Standard_B2pts_v2`, Arm64, 2 vCPU, 1 GiB RAM, Central India) with no public IP, two containers. No Redis, no queue, no worker: an audit is a FastAPI background task, at most three run at once behind an `asyncio.Semaphore`, and the finished result is one JSONB column. No JavaScript framework either — every page, including the report, is server-rendered, because a tool that lectures people about JavaScript SEO should be readable by a crawler that runs none.
 
 | Layer | Choice |
 |---|---|
@@ -51,7 +52,7 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Parsing | BeautifulSoup 4.12 |
 | Analysis | NetworkX 3.4 for the link graph, own PageRank, own 64-bit SimHash |
 | Data | PostgreSQL 16 via psycopg 3; in-memory store when `DATABASE_URL` is unset |
-| Deploy | Docker Compose, Nginx reverse proxy, Certbot, Cloudflare DNS, UFW |
+| Deploy | Docker Compose, Nginx reverse proxy, Cloudflare Tunnel (`cloudflared`), Cloudflare DNS |
 | Reports | HTML page, JSON download, PDF via fpdf2 |
 | Tests | pytest, 22 tests against a fake site on `httpx.MockTransport` (two need Postgres via `TEST_DATABASE_URL`). GitHub Actions on every push, with a Postgres service |
 
@@ -73,7 +74,7 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 | Pages per audit | Capped at 300, depth 6 |
 | PDF report | Implemented — `/report/{id}/pdf` |
 | Compare with the previous audit | Implemented — every finished audit is saved; a re-run of the same URL shows what was fixed, what is new and the change in health score |
-| Per-IP limit on starting audits | Implemented — 10 per hour by default, stored in Postgres, `CF-Connecting-IP` trusted only from Cloudflare's IP ranges |
+| Per-IP limit on starting audits | Implemented — 10 per hour by default, stored in Postgres, visitor IP taken from `CF-Connecting-IP` only for requests that arrive through the tunnel |
 | Restart recovery | Implemented — audits left queued or running are marked failed on startup |
 | Accounts | Implemented — optional; email + scrypt password hash, 30-day session cookie, email confirmation, account deletion |
 | Scheduled re-audits | Implemented — up to 5 monitored sites per account, daily or weekly; email when the health score drops by 5+ points, sent through Brevo SMTP |
@@ -97,6 +98,10 @@ One Azure VM (`Standard_B2ats_v2`, 2 vCPU, 1 GiB RAM, Central India), two contai
 **SSL had to be issued before the proxy went on.** Let's Encrypt's HTTP-01 check has to reach the VM itself. Order used: records grey, wait for propagation and confirm it with `dig`, run Certbot, then turn the records orange and set Cloudflare to Full (strict) so Cloudflare verifies the origin certificate instead of trusting anything.
 
 **The planned VM size did not exist.** B1s is not offered to Azure for Students in Central India, and B2ats_v2 is restricted in availability zones 1 and 2. The VM is B2ats_v2 with no zone, plus 1 GB of swap for the 1 GiB of RAM. Server setup is one script (`deploy/azure-setup.sh`) passed as Azure custom data, so the VM can be rebuilt from nothing.
+
+**A public IP cost more than the VM.** Azure for Students covers the B-series VM hours and two 64 GB disks, but not public IP addresses, which are billed for every hour they exist. The site now runs behind a Cloudflare Tunnel: `cloudflared` on the VM opens outbound connections to Cloudflare, so the VM has no public IP and no open inbound port at all, and the firewall rules for Cloudflare's ranges are no longer needed. Requests reach Nginx from `cloudflared` on loopback, so `deploy/nginx-cloudflared-realip.conf` takes the visitor IP from `CF-Connecting-IP` for loopback requests only, and the per-IP limit still counts real visitors. The tunnel does not verify the origin certificate, because that hop never leaves the machine; an expired Let's Encrypt certificate can no longer take the site down. Visitors see Cloudflare's certificate.
+
+**Moving to Arm without losing data.** The free tier also covers an Arm64 B2pts_v2 VM, so SiteScope moved there from x86. Both images (`python:3.12-slim`, `postgres:16-alpine`) are multi-arch, so the same Compose file builds unchanged. The database was copied with `pg_dump`/`pg_restore` (a logical copy, not the x86 data directory) after a full rehearsal, and every table was compared on the old and new VM by row count and a hash of its contents before traffic moved. The switch itself was moving the tunnel connector, about 23 seconds of downtime.
 
 **The per-IP limit had to stop trusting a forgeable header.** Cloudflare sends the visitor IP in `CF-Connecting-IP`, but anyone hitting the VM's IP directly can send that header too and get a fresh limit with every fake value. The app now reads `X-Real-IP`, which Nginx always overwrites with the address that actually connected, and uses `CF-Connecting-IP` only when that address is in Cloudflare's published ranges. Otherwise the connecting address itself is the key. The limit is also kept in a `rate_hits` table in Postgres instead of memory, so a restart no longer resets it and a second app container would share it. A Postgres advisory lock per IP stops two parallel requests from both slipping under the limit.
 
@@ -133,14 +138,28 @@ The test suite serves a small fake website through `httpx.MockTransport` — rob
 
 ## Deploying
 
-`deploy/azure-setup.sh` turns a fresh Ubuntu 24.04 VM into the production server: packages, UFW (SSH, 80, 443), swap, Docker, the repo in `/opt/sitescope`, a random database password in `.env`, Docker Compose, and the Nginx site. Pass it as Azure custom data:
+`deploy/azure-setup.sh` turns a fresh Ubuntu 24.04 VM into an app server: packages, UFW (SSH, 80, 443), swap, Docker, the repo in `/opt/sitescope`, a random database password in `.env`, Docker Compose, and the Nginx site. Pass it as Azure custom data:
 
 ```bash
 #!/bin/bash
 curl -fsSL https://raw.githubusercontent.com/vikramyadav1404/sitescope/main/deploy/azure-setup.sh | bash
 ```
 
-Then point DNS at the VM (DNS only), run `sudo certbot --nginx -d vikramyadav.me -d www.vikramyadav.me`, switch the records to Proxied and Cloudflare to Full (strict). Once the proxy is on, run `sudo bash deploy/cloudflare-ufw.sh`: it fetches Cloudflare's current IP ranges, allows 80 and 443 only from them, removes the open-to-all rules and keeps SSH open. It is safe to re-run (for example weekly from cron) and refuses to change anything if the download looks wrong. Run it only after the first certificate is issued, because that check needs Let's Encrypt to reach the VM directly; renewals go through Cloudflare. `deploy/evidence.sh` prints the server facts — OS, Nginx, Docker, Postgres version, firewall, DNS, certificate expiry — without printing any secret.
+Production runs without a public IP, behind a Cloudflare Tunnel. On the VM:
+
+```bash
+cloudflared tunnel login                                  # authorise once in the browser
+cloudflared tunnel create sitescope
+sudo cp deploy/cloudflared-config.yml /etc/cloudflared/config.yml   # set the tunnel id and credentials path
+sudo cp deploy/nginx-cloudflared-realip.conf /etc/nginx/conf.d/cloudflared-realip.conf
+sudo nginx -t && sudo systemctl reload nginx
+sudo cloudflared --config /etc/cloudflared/config.yml service install
+cloudflared tunnel route dns sitescope vikramyadav.me
+```
+
+The VM still needs outbound internet (Docker images, PageSpeed, SMTP, the sites it audits), which Azure gives a subnet without "private subnet" enabled.
+
+The older setup is kept for reference: DNS pointed at a public IP, `sudo certbot --nginx -d vikramyadav.me -d www.vikramyadav.me`, records switched to Proxied with Cloudflare on Full (strict), then `sudo bash deploy/cloudflare-ufw.sh` to allow 80 and 443 only from Cloudflare's ranges. None of that is needed behind the tunnel. `deploy/evidence.sh` prints the server facts — OS, Nginx, Docker, Postgres version, tunnel, DNS — without printing any secret.
 
 ## Configuration
 
