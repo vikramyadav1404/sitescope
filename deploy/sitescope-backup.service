@@ -1,0 +1,8 @@
+[Unit]
+Description=SiteScope database backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sitescope-backup.sh
