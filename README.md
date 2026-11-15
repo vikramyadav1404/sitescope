@@ -103,6 +103,8 @@ One Azure VM (`Standard_B2pts_v2`, Arm64, 2 vCPU, 1 GiB RAM, Central India) with
 
 **Moving to Arm without losing data.** The free tier also covers an Arm64 B2pts_v2 VM, so SiteScope moved there from x86. Both images (`python:3.12-slim`, `postgres:16-alpine`) are multi-arch, so the same Compose file builds unchanged. The database was copied with `pg_dump`/`pg_restore` (a logical copy, not the x86 data directory) after a full rehearsal, and every table was compared on the old and new VM by row count and a hash of its contents before traffic moved. The switch itself was moving the tunnel connector, about 23 seconds of downtime.
 
+**Backups leave the VM.** Every night a systemd timer runs `deploy/sitescope-backup.sh`: a `pg_dump` in custom format, checked with `pg_restore --list`, the newest 14 kept on the VM and a copy uploaded to an Azure Blob container, where a lifecycle rule deletes copies older than 35 days. The upload signs in with the VM's managed identity, which may write to that one container and nothing else, so no storage key exists on the VM; shared-key access is turned off on the account. The first backup was restored into a separate database and every table matched the live one by row count and content hash. The database is small (a dump is about 30 KB), so the copies cost close to nothing.
+
 **The per-IP limit had to stop trusting a forgeable header.** Cloudflare sends the visitor IP in `CF-Connecting-IP`, but anyone hitting the VM's IP directly can send that header too and get a fresh limit with every fake value. The app now reads `X-Real-IP`, which Nginx always overwrites with the address that actually connected, and uses `CF-Connecting-IP` only when that address is in Cloudflare's published ranges. Otherwise the connecting address itself is the key. The limit is also kept in a `rate_hits` table in Postgres instead of memory, so a restart no longer resets it and a second app container would share it. A Postgres advisory lock per IP stops two parallel requests from both slipping under the limit.
 
 **Accounts are optional, and audits still need none.** An account only adds monitored sites. Passwords are hashed with scrypt from the Python standard library, so no new dependency. Session and email-confirmation tokens are random and only their SHA-256 is stored, so a copy of the database contains no working session. The cookie is HttpOnly, Secure and SameSite=Lax, and every account form also checks the Origin header. Log-in attempts count against a per-IP limit whether they succeed or not, so a blocked IP can't keep guessing. Alerts go only to confirmed addresses, so nobody can sign up with someone else's email and send them mail.
@@ -158,6 +160,26 @@ cloudflared tunnel route dns sitescope vikramyadav.me
 ```
 
 The VM still needs outbound internet (Docker images, PageSpeed, SMTP, the sites it audits), which Azure gives a subnet without "private subnet" enabled.
+
+Backups (once per VM; the storage account `sitescopedbbackup`, its `sitescope-db` container, the 35-day lifecycle rule and the VM's role on that container are set up from Azure Cloud Shell):
+
+```bash
+curl -fsSL -o /tmp/azcopy.tgz https://aka.ms/downloadazcopy-v10-linux-arm64 && tar -xzf /tmp/azcopy.tgz -C /tmp
+sudo install -m 755 /tmp/azcopy_linux_*/azcopy /usr/local/bin/azcopy
+sudo install -m 755 deploy/sitescope-backup.sh /usr/local/bin/sitescope-backup.sh
+sudo cp deploy/sitescope-backup.service deploy/sitescope-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now sitescope-backup.timer
+sudo systemctl start sitescope-backup.service && journalctl -u sitescope-backup -n 3
+```
+
+Restoring a backup (local copies are in `/var/backups/sitescope`; an off-VM copy can be fetched with `AZCOPY_AUTO_LOGIN_TYPE=MSI azcopy copy https://sitescopedbbackup.blob.core.windows.net/sitescope-db/daily/<file> .`):
+
+```bash
+cd /opt/sitescope && docker compose stop app
+docker compose exec -T db psql -U sitescope -d postgres -c 'DROP DATABASE sitescope WITH (FORCE)' -c 'CREATE DATABASE sitescope OWNER sitescope'
+docker compose exec -T db pg_restore -U sitescope -d sitescope --no-owner < /var/backups/sitescope/sitescope-<timestamp>.dump
+docker compose start app
+```
 
 The older setup is kept for reference: DNS pointed at a public IP, `sudo certbot --nginx -d vikramyadav.me -d www.vikramyadav.me`, records switched to Proxied with Cloudflare on Full (strict), then `sudo bash deploy/cloudflare-ufw.sh` to allow 80 and 443 only from Cloudflare's ranges. None of that is needed behind the tunnel. `deploy/evidence.sh` prints the server facts — OS, Nginx, Docker, Postgres version, tunnel, DNS — without printing any secret.
 
