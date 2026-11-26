@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"How to find and fix broken links on your website","author":{"@type":"Person","name":"Vikram Yadav"},"publisher":{"@type":"Organization","name":"SiteScope","url":"https://vikramyadav.me/"},"datePublished":"2026-11-26","dateModified":"2026-11-26","mainEntityOfPage":"{{ canonical }}"}
+</script>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>How to find and fix broken links on your website</h1>
+  <p class="lead">A broken link is a small thing on one page and a real problem across fifty. Here is how to find every one of them, decide which to fix first, and fix them so they stay fixed.</p>
+</section>
+<section>
+  <h2>What counts as a broken link</h2>
+  <p>A link is broken when the URL it points to does not return a working page. Most of the time that means a <strong>404 Not Found</strong>: the page was deleted, renamed, or the link has a typo in it. A <strong>410 Gone</strong> is the same thing said on purpose. Links that land on a <strong>5xx</strong> server error are broken too, at least while the error lasts.</p>
+  <p>Then there are the ones that are not quite broken but still hurt:</p>
+  <ul>
+    <li><strong>Redirect chains.</strong> Page A redirects to B, which redirects to C. The link still works, but every hop is a wasted request, and long chains can stop being followed.</li>
+    <li><strong>Soft 404s.</strong> The server says 200 OK, but the page just says "not found" or is empty. Common on single-page apps that send the same HTML for every path.</li>
+    <li><strong>Links to the wrong version.</strong> <code>http://</code> instead of <code>https://</code>, or a missing trailing slash, so every click goes through a redirect first.</li>
+  </ul>
+
+  <h2>Why they matter for SEO</h2>
+  <p>The honest answer is that a few broken outbound links will not sink a site. The damage is more practical than that.</p>
+  <p>First, a broken internal link is a dead end for crawlers. Search engines discover pages by following links, so if the only link to your pricing page has a typo in it, that page is harder to find. Google's own <a href="https://developers.google.com/search/docs/crawling-indexing/http-network-errors">documentation on HTTP status codes</a> says it does not index URLs that return 4xx codes, and drops ones that were already indexed. So a page that started returning 404 after a site redesign will quietly fall out of search.</p>
+  <p>Second, server errors slow crawling down. The same page explains that 5xx responses make Google's crawlers back off for a while, and URLs that keep failing get removed from the index. If half your links point at a flaky endpoint, you are teaching the crawler to visit less often.</p>
+  <p>Third, people leave. Someone who clicks a link and gets a 404 page rarely tries a second link. They go back to the search results and click on a competitor.</p>
+
+  <h2>How to find broken links</h2>
+  <h3>1. Start with Google Search Console</h3>
+  <p>If your site is verified, open <strong>Indexing → Pages</strong> and look at the reasons pages are not indexed. "Not found (404)" lists URLs Google tried to crawl and could not. Click any of them and use URL Inspection to see which page linked to it. This only shows what Google has already found, so it lags behind your site by days or weeks, but it is the closest thing to seeing your site through Google's eyes.</p>
+
+  <h3>2. Crawl the whole site</h3>
+  <p>A crawler starts at your homepage, follows every link it finds, and records the status code of each one. This is the only way to catch a broken link before Google does. Desktop crawlers do this well but need to be installed, and the free versions usually cap how many URLs they will check. Browser-based tools like <a href="/broken-link-checker/">SiteScope's broken link checker</a> do the same thing without an install: give it your homepage and it crawls up to {{ max_pages }} pages, checks every internal link and up to 200 external ones, and tells you which page each broken link is on.</p>
+  <p>What you want from the output is not just "this URL is broken" but "this URL is broken, and it is linked from these pages." The broken URL is what is wrong. The page with the link is where you fix it.</p>
+
+  <h3>3. Check your server logs (if you have them)</h3>
+  <p>Access logs show every 404 your server actually returned, including ones from old backlinks on other sites that no crawler of yours would ever follow. Filter for status 404 and sort by count. A URL that gets hit hundreds of times a month is a page people still expect to exist.</p>
+
+  <h3>4. Spot-check by hand</h3>
+  <p>Open your site in a browser with the Network tab of DevTools open, click through the main navigation, and watch for red rows. It is slow, but it catches things automated tools miss, such as links that only appear after a menu is opened by JavaScript.</p>
+
+  <h2>Which ones to fix first</h2>
+  <p>A crawl of even a small site can turn up a long list, and fixing them in the order they appear is a waste of time. A better order:</p>
+  <ol>
+    <li><strong>Broken links in the navigation, header or footer.</strong> These appear on every page, so one bad link becomes hundreds of broken links at once.</li>
+    <li><strong>Broken internal links to pages you want to rank.</strong> These cut off crawl paths to your most important content.</li>
+    <li><strong>Old URLs that still get traffic or have backlinks.</strong> Someone else is sending visitors there. Catch them.</li>
+    <li><strong>Redirect chains on internal links.</strong> Easy to fix, and every one you fix saves a request.</li>
+    <li><strong>Broken outbound links.</strong> Worth fixing for your readers, but the lowest priority for crawling.</li>
+  </ol>
+  <p>This is the same idea SiteScope uses to <a href="/how-issues-are-ranked/">rank issues</a>: how bad a problem is, multiplied by how many pages it affects. A minor problem on every page often matters more than a serious one on a single page.</p>
+
+  <h2>How to fix them</h2>
+  <h3>The page moved: redirect it</h3>
+  <p>If the content still exists at a new URL, add a <strong>301</strong> redirect from the old URL to the new one. Google treats a 301 as a strong signal that the new URL should replace the old one, while a 302 says the move is temporary. Then update your own internal links to point straight at the new URL, so your visitors do not go through the redirect at all.</p>
+
+  <h3>The page is gone: decide if anything replaces it</h3>
+  <p>If there is a close replacement, such as a newer version of the same guide, redirect to it. If there is nothing similar, let the URL return a 404 or 410 and remove the links that point to it. Redirecting every dead URL to the homepage is tempting, but it confuses visitors, and Google may treat those redirects as soft 404s anyway.</p>
+
+  <h3>The link has a typo: just fix the link</h3>
+  <p>A surprising number of broken links are a missing letter or an extra slash. Fix it at the source.</p>
+
+  <h3>The external site went away: replace or remove</h3>
+  <p>Look for the same resource at its new address, link to a different source that says the same thing, or remove the link. If the page was important and has vanished, an archived copy is sometimes better than nothing.</p>
+
+  <h3>Collapse redirect chains</h3>
+  <p>If A goes to B and B goes to C, point A straight at C and update every internal link to C directly.</p>
+
+  <h2>Stop them coming back</h2>
+  <p>Broken links come back because sites keep changing. A few habits help:</p>
+  <ul>
+    <li>Whenever you rename or delete a page, add the redirect in the same change, not later.</li>
+    <li>Re-crawl after every redesign or migration, before you announce it.</li>
+    <li>Set up a scheduled re-audit. A SiteScope account can re-check a site daily or weekly and email you when the health score drops, which is usually the first sign that something broke.</li>
+    <li>Use a custom 404 page that returns a real 404 status and links to your main sections, so the visitors who do hit one have somewhere to go.</li>
+  </ul>
+  <p>If you would rather hand all of this to someone else, <a href="https://seonalabs.com">search marketing agencies like SEOnaLabs</a> include this kind of technical cleanup in their SEO work. For a small site, though, an hour with a crawler and a list sorted by priority usually covers it.</p>
+
+  <h2>Check your site now</h2>
+  <p>Enter your homepage below. SiteScope crawls the site, checks every link it finds, and lists each broken one with the page it is on.</p>
+  {% include "_box.html" %}
+</section>
+{% endblock %}
