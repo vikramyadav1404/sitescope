@@ -117,6 +117,8 @@ PAGES = {
                                            "Check in ten minutes whether Google and AI crawlers can read your React site: raw HTML, titles, links, status codes and the fixes that matter."),
     "/free-seo-audit-small-business/": ("guide_audit.html", "Free SEO Audit for a Small Business Website | SiteScope",
                                         "Audit your small business website for SEO for free: indexing, robots.txt, broken links, titles, duplicates, internal links and speed, in order."),
+    "/how-to-find-broken-links/": ("guide_broken.html", "How to Find and Fix Broken Links on Your Website | SiteScope",
+                                   "Find every broken link on your website, decide which to fix first, and fix them with redirects or updated links so they stay fixed."),
     "/about/": ("about.html", "About SiteScope: Free Technical SEO Audits",
                 "SiteScope is a free technical SEO audit tool built as a student project at Bennett University for small startups and student websites."),
     "/privacy/": ("privacy.html", "Privacy Policy for the SiteScope SEO Audit Tool",
